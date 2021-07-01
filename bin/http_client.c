@@ -21,6 +21,7 @@
 #include <inttypes.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/queue.h>
@@ -94,6 +95,50 @@ static struct sample_stats  s_stat_to_conn,     /* Time to connect */
                             s_stat_req;     /* From TTFB to EOS */
 static unsigned s_stat_conns_ok, s_stat_conns_failed;
 static unsigned long s_stat_downloaded_bytes;
+/*------------------------------------------------------------------------------------*/
+static long double s_stat_throughput = 0.0; /* Throughput at the end of each stream/request */
+static long double s_stat_s_throughput = 0.0; /* Smoothed throughput for costs computations */
+static double buffer_size = 0.0; /* Updated buffer size of the downloaded segment */
+static unsigned seg_length = 2; /* Lenght of the segments to be downloaded */
+static unsigned playout = 0; /* States whether the playout is running [1] or is paused (stall or buffering) [0] */
+static unsigned min_init_bs = 3; /* Minimum initial[/stall] buffer size (sec) to [re]start playout */
+static lsquic_time_t playout_t; /* Start playout time */
+static bool still_seg = true; /* States whether there are still segments to be downloaded (based on the manifest file) */
+#define N_REP 3 /* Number of available media representations (quality levels) */
+static const char FP_PATH[] = "sintel/";
+static const char SP_PATH[] = "/segment_";
+static const char EXT[] = ".m4s";
+static char *res_name_paths[N_REP] = {"320x240", "384x288", "512x384"};
+static int seg_index = 1;
+static char *seg_paths[N_REP] = {"sintel/320x240/segment_320x240_1.m4s", "sintel/384x288/segment_384x288_1.m4s", "sintel/512x384/segment_512x384_1.m4s"}; /* To be actually parsed from an MPD file but done without loss of generality (Not considering the initialization segment) */
+static const int seg_bitrates[N_REP] = {235, 375, 560}; /* [kbps] To be actually parsed from an MPD file but done without loss of generality */
+#define K_MAX 10 /* Quality  values for average quality computation */
+static long double qualities[K_MAX] = {0,0,0,0,0,0,0,0,0,0}; /* Max. number of segments for average quality computation */
+static unsigned qualities_index = 0; /* Index for values substitution */
+static const float alph = .07, beth = .21, gamm = .73;
+
+/* Update the buffer size when required */
+static void update_buff(bool sr){
+	if(sr){ /* Segment received */
+		buffer_size += seg_length;
+		if(!playout){ /* If player is paused */
+			if(buffer_size > min_init_bs){
+				playout = 1;
+				playout_t = lsquic_time_now();
+				return;
+			}
+		}
+	}
+	if(playout){ /* If player is not paused */
+		buffer_size -= (long double) (lsquic_time_now() - playout_t) / 1000000;
+		if(buffer_size <= 0){
+			buffer_size = 0;
+			playout = 0;
+		} else
+			playout_t = lsquic_time_now();
+	}
+}
+/*------------------------------------------------------------------------------------*/
 
 static void
 update_sample_stats (struct sample_stats *stats, unsigned long val)
@@ -497,6 +542,11 @@ struct lsquic_stream_ctx {
 static lsquic_stream_ctx_t *
 http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 {
+	
+	/* Buffer update */
+	update_buff(false); // [false] is "normal Time Update"
+	printf("Buffer size: %.3f sec\n", buffer_size);
+	
     const int pushed = lsquic_stream_is_pushed(stream);
 
     if (pushed)
@@ -886,13 +936,97 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
         assert(NULL == st_h);
         return;
     }
+	
+	long double new_throughput = (long double) st_h->sh_nread * 8 / ((long double) 1000 * (lsquic_time_now() - st_h->sh_created) / 1000000); // [kbps]
+	/* Smoothed throughput computation */
+	if (s_stat_s_throughput == 0)
+		s_stat_s_throughput = new_throughput;
+	else
+		s_stat_s_throughput = .825 * s_stat_throughput + .175 * new_throughput;
+    /* Throughput computation */
+    s_stat_throughput = new_throughput;
+	// Estimated Throughput is the MIN(Smoothed and Normal)
+	long double s_stat_e_throughput = MIN(s_stat_throughput, s_stat_s_throughput);
+	printf("Throughput: %.0Lf kbps\n", s_stat_throughput);
+	printf("Smoothed throughput: %.0Lf kbps\n", s_stat_s_throughput);
+	printf("Estimated throughput: %.0Lf kbps\n", s_stat_e_throughput);
+	
+	/* Buffer update */
+	update_buff(true); // [true] is "Segment Received"
+	printf("Buffer size: %.3f sec\n", buffer_size);
 
     LSQ_INFO("%s called", __func__);
     struct http_client_ctx *const client_ctx = st_h->client_ctx;
-    lsquic_conn_t *conn = lsquic_stream_conn(stream);
+    lsquic_conn_t *const conn = lsquic_stream_conn(stream);
     lsquic_conn_ctx_t *const conn_h = lsquic_conn_get_ctx(conn);
     --conn_h->ch_n_reqs;
     --conn_h->ch_n_cc_streams;
+	/* Update seg_paths && if there's more segments to be downloaded -> New request for new segment */
+	++seg_index;
+	for (size_t i = 0; i < N_REP; i++){
+		// Update paths
+		int up_len = strlen(FP_PATH) + 2*strlen(res_name_paths[i]) + strlen(SP_PATH) + strlen(EXT) + 2;
+		char* temp_pp = (char*)malloc((up_len+1)*sizeof(char));
+		snprintf(temp_pp, (up_len+1)*sizeof(char), "%s%s%s%s_%d%s", FP_PATH, res_name_paths[i], SP_PATH, res_name_paths[i], seg_index, EXT);
+		printf("Updated path %d: %s\n", (int) i, temp_pp);
+		seg_paths[i] = temp_pp;
+		temp_pp = NULL;
+	}
+	if (still_seg && client_ctx->hcc_total_n_reqs){
+		/* WISH algorithm */
+		// just received segment [S_t]
+		// want to request segment [S_{t+1}]
+		unsigned sel_index = 0;
+		// check if buffer is over the threshold level
+		if (buffer_size > min_init_bs) {
+			// compute the cost on all the representations
+			unsigned i = 1;
+			double tot_cost = INFINITY;
+			while (i < N_REP && seg_bitrates[i] <= s_stat_s_throughput) {
+				// Throughput cost
+				double t_cost = seg_bitrates[i] / s_stat_e_throughput;
+				printf("Throughput cost representation %u: %.3f\n", i, t_cost);
+				// Buffer cost
+				double b_cost = seg_bitrates[i] * seg_length / ((buffer_size - min_init_bs) * s_stat_e_throughput);
+				printf("Buffer cost representation %u: %.3f\n", i, b_cost);
+				// Quality cost
+				qualities[qualities_index] = seg_bitrates[i] / seg_bitrates[N_REP - 1];
+				double avg_quality = qualities[qualities_index];
+				unsigned k_real = 1;
+				for (unsigned temp_index = qualities_index + 1; temp_index < K_MAX + qualities_index; temp_index++){
+					if (qualities[(temp_index % K_MAX)] != 0){
+						avg_quality += qualities[(temp_index % K_MAX)];
+						++k_real;
+					}
+				}
+				avg_quality /= k_real;
+				double q_cost = expl(1 + avg_quality - 2*qualities[qualities_index])/expl(2*(1 - seg_bitrates[0] / seg_bitrates[N_REP - 1]));
+				printf("Quality cost representation %u: %.3f\n", i, q_cost);
+				// Total cost
+				double temp_cost = alph * t_cost + beth * b_cost + gamm * q_cost;
+				printf("Total cost representation %u: %.3f\n", i, temp_cost);
+				if (temp_cost < tot_cost){
+					tot_cost = temp_cost;
+					sel_index = i;
+				}
+				++qualities_index;
+				++i;
+			}
+			printf("Least tot cost: %.3f\n", tot_cost);
+		}
+		// choose [i]th representation whose cost is the least
+		/* End of WISH */ 
+		struct path_elem *pe;
+		pe = calloc(1, sizeof(*pe));
+        pe->path = seg_paths[sel_index]; /* Path of the next requested segment */
+		printf("Chosen representation %u, segment path: '%s'\n", sel_index, pe->path);
+        TAILQ_INSERT_TAIL(&client_ctx->hcc_path_elems, pe, next_pe);
+		conn_h->ch_n_reqs = MIN(client_ctx->hcc_total_n_reqs,
+                                                client_ctx->hcc_reqs_per_conn);
+		client_ctx->hcc_total_n_reqs -= conn_h->ch_n_reqs;
+	}
+	//still_seg = false;
+	/* End new request for new segment */
     if (0 == conn_h->ch_n_reqs)
     {
         LSQ_INFO("all requests completed, closing connection");
@@ -1585,7 +1719,6 @@ const struct lsquic_stream_if qif_client_if = {
     .on_close               = qif_client_on_close,
 };
 
-
 int
 main (int argc, char **argv)
 {
@@ -1850,23 +1983,23 @@ main (int argc, char **argv)
         create_connections(&client_ctx);
 
     LSQ_DEBUG("entering event loop");
+	
+	s = prog_run(&prog);
 
-    s = prog_run(&prog);
-
-    if (stats_fh)
-    {
-        elapsed = (long double) (lsquic_time_now() - start_time) / 1000000;
-        fprintf(stats_fh, "overall statistics as calculated by %s:\n", argv[0]);
-        display_stat(stats_fh, &s_stat_to_conn, "time for connect");
-        display_stat(stats_fh, &s_stat_req, "time for request");
-        display_stat(stats_fh, &s_stat_ttfb, "time to 1st byte");
-        fprintf(stats_fh, "downloaded %lu application bytes in %.3Lf seconds\n",
-            s_stat_downloaded_bytes, elapsed);
-        fprintf(stats_fh, "%.2Lf reqs/sec; %.0Lf bytes/sec\n",
-            (long double) s_stat_req.n / elapsed,
-            (long double) s_stat_downloaded_bytes / elapsed);
-        fprintf(stats_fh, "read handler count %lu\n", prog.prog_read_count);
-    }
+	if (stats_fh)
+	{
+		elapsed = (long double) (lsquic_time_now() - start_time) / 1000000;
+		fprintf(stats_fh, "overall statistics as calculated by %s:\n", argv[0]);
+		display_stat(stats_fh, &s_stat_to_conn, "time for connect");
+		display_stat(stats_fh, &s_stat_req, "time for request");
+		display_stat(stats_fh, &s_stat_ttfb, "time to 1st byte");
+		fprintf(stats_fh, "downloaded %lu application bytes in %.3Lf seconds\n",
+			s_stat_downloaded_bytes, elapsed);
+		fprintf(stats_fh, "%.2Lf reqs/sec; %.0Lf bytes/sec\n",
+			(long double) s_stat_req.n / elapsed,
+			(long double) s_stat_downloaded_bytes / elapsed);
+		fprintf(stats_fh, "read handler count %lu\n", prog.prog_read_count);
+	}
 
     prog_cleanup(&prog);
     if (promise_fd >= 0)
