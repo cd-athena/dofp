@@ -105,6 +105,9 @@ static unsigned min_init_bs = 3; /* Minimum initial[/stall] buffer size (sec) to
 static lsquic_time_t playout_t; /* Start playout time */
 static bool still_seg = true; /* States whether there are still segments to be downloaded (based on the manifest file) */
 #define N_REP 3 /* Number of available media representations (quality levels) */
+static double stalls[] = {0.0, 0.0, 0.0, 0.0, 0.0};
+static unsigned stall_ind = 0; // First stall is the initial buffering
+static lsquic_time_t stall_t; /* Start stall time */
 static const char FP_PATH[] = "sintel/";
 static const char SP_PATH[] = "/segment_";
 static const char EXT[] = ".m4s";
@@ -125,6 +128,9 @@ static void update_buff(bool sr){
 			if(buffer_size > min_init_bs){
 				playout = 1;
 				playout_t = lsquic_time_now();
+				stalls[stall_ind] = (double) (playout_t - stall_t) / 1000000;
+				printf("Stall n. %u: Time to stall -> %f s\n", stall_ind, stalls[stall_ind]);
+				++stall_ind;
 				return;
 			}
 		}
@@ -132,8 +138,15 @@ static void update_buff(bool sr){
 	if(playout){ /* If player is not paused */
 		buffer_size -= (long double) (lsquic_time_now() - playout_t) / 1000000;
 		if(buffer_size <= 0){
-			buffer_size = 0;
+			if (stall_ind + 1 > (sizeof(stalls)/sizeof(stalls[0]) - 1)){
+				double* stalls_p = stalls;
+				stalls_p = realloc(stalls_p, 2 * (stall_ind + 1) * sizeof(double)); // Double the stalls array size re-allocating some memory
+				for (unsigned i = stall_ind; i < 2 * (stall_ind + 1); i++)
+					stalls[i] = 0.0; // Initialize the stalls to 0 (No-stalling happened)
+			}
+			buffer_size = 0.0;
 			playout = 0;
+			stall_t = lsquic_time_now();
 		} else
 			playout_t = lsquic_time_now();
 	}
@@ -942,7 +955,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 	if (s_stat_s_throughput == 0)
 		s_stat_s_throughput = new_throughput;
 	else
-		s_stat_s_throughput = .825 * s_stat_throughput + .175 * new_throughput;
+		s_stat_s_throughput = .875 * s_stat_throughput + .125 * new_throughput; // (1-1/8) and 1/8 as described in the WISH paper
     /* Throughput computation */
     s_stat_throughput = new_throughput;
 	// Estimated Throughput is the MIN(Smoothed and Normal)
@@ -1733,6 +1746,7 @@ main (int argc, char **argv)
     struct prog prog;
     const char *token = NULL;
     struct priority_spec *priority_specs = NULL;
+	stall_t = lsquic_time_now();
 
     TAILQ_INIT(&sports);
     memset(&client_ctx, 0, sizeof(client_ctx));
