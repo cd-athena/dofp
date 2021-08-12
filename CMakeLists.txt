@@ -207,6 +207,43 @@ IF(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     link_directories( /usr/local/lib )
 ENDIF()
 
+# Find and include Python
+#
+#find_package(PythonInterp REQUIRED)
+#find_package(PythonLibs REQUIRED)
+# Need to install python-dev
+#include_directories(${PYTHON_INCLUDE_DIRS})
+#link_libraries(${PYTHON_LIBRARIES})
+# Find and include NUMPY (?) and CVXOPT
+#
+#include_directories(${CMAKE_CURRENT_LIST_DIR}/cvxopt/src/C/)
+
+# Find GUROBI
+
+find_path(GUROBI_INCLUDE_DIRS
+    NAMES gurobi_c.h
+    HINTS ${GUROBI_DIR} $ENV{GUROBI_HOME}
+    PATH_SUFFIXES include)
+
+message("GUROBI_INCLUDE_DIRS points to " ${GUROBI_INCLUDE_DIRS})
+
+find_library(GUROBI_LIBRARY
+    NAMES gurobi gurobi91
+    HINTS ${GUROBI_DIR} $ENV{GUROBI_HOME}
+    PATH_SUFFIXES lib)
+
+message("GUROBI_LIBRARY points to " ${GUROBI_LIBRARY})
+
+#find_package(GUROBI REQUIRED)
+
+if(GUROBI_INCLUDE_DIRS)
+  message(STATUS "GUROBI FOUND")
+  include_directories(${GUROBI_INCLUDE_DIRS})
+  link_libraries(${GUROBI_LIBRARY})
+else(GUROBI_FOUND)
+  message(FATAL_ERROR "!!! GUROBI NOT FOUND !!!")
+endif(GUROBI_FOUND)
+
 # Find zlib and libevent header files and library files
 # TODO: libevent is not strictly necessary to build the library.
 FIND_PATH(ZLIB_INCLUDE_DIR NAMES zlib.h)

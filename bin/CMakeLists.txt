@@ -40,6 +40,9 @@ IF (NOT MSVC)
 
 add_executable(http_client
     http_client.c
+    abr_max_j.c
+	abr_max_min_j.c
+	abr_max_j_q.c
     prog.c
     test_common.c
     test_cert.c
@@ -50,6 +53,9 @@ ELSE()
 
 add_executable(http_client
     http_client.c
+    abr_max_j.c
+	abr_max_min_j.c
+	abr_max_j_q.c
     prog.c
     test_common.c
     test_cert.c
