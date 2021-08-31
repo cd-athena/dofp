@@ -35,6 +35,7 @@
 #include <fcntl.h>
 #include <event2/event.h>
 #include <math.h>
+#include <float.h>
 
 #include <openssl/bio.h>
 #include <openssl/pem.h>
@@ -61,9 +62,9 @@
 #include "../src/liblsquic/lsquic_conn.h"
 #include "lsxpack_header.h"
 
-#define N_REP 10 /* Number of available media representations (quality levels) */
+#define N_REP 7 /* Number of available media representations (quality levels) */
 #define K_MAX 10 /* Quality  values for average quality computation */
-#define N_MAX_SEG 27 /* Max number of segments to be downloaded */
+#define N_MAX_SEG 75 /* Max number of segments to be downloaded */
 #define AVG_COUNT 5 /* Moving average count */
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -110,7 +111,8 @@ struct throughput_stats
 {
     long double         throughput;
     long double         s_throughput;
-    long double         e_throughput;
+    long double         e_throughput [N_MAX_SEG];
+	double              b_level [N_MAX_SEG];
 };
 
 struct bola_stats
@@ -124,6 +126,20 @@ struct bola_stats
 	unsigned      m_star;       // selected quality
 };
 
+// Minh - Add BOLA ABR - ADD - S
+struct bola_m_stats
+{
+    double        Sm [N_REP];    // segment size
+    double        Vm [N_REP];    // utilities
+    double        value [N_REP]; // the values of optimization problem
+    double        max_value;     // the value of equation (9) in the paper
+    double        V;             // the control parameter for overflow case
+    double        gma;           // control parameter for rebuffering case
+    double        SM;            // minimum segment size
+    unsigned      m_star;        // selected quality
+};
+// Minh - Add BOLA ABR - ADD - E
+
 struct sara_stats
 {
 	double        I;
@@ -131,31 +147,34 @@ struct sara_stats
 	double        B_betha;
 	double        B_max;
 	long double   W [N_REP][N_MAX_SEG];    // KB
-	long double   weights [N_MAX_SEG];         // In KB
-	long double   down_rate [N_MAX_SEG];       // In KB/s
+	long double   weights [N_MAX_SEG];     // In KB
+	long double   down_rate [N_MAX_SEG];   // In KB/s
 	double        H;                       // Weighted Harmonic mean of first n segments
 	double        delta;
 };
 
 static struct           throughput_stats t_stats;
+// Minh - Add BOLA ABR - ADD - S
+static struct           bola_m_stats b_m_stats;
+// Minh - Add BOLA ABR - ADD - E
 static struct           bola_stats b_stats;
 static struct           sara_stats s_stats;
-static double const		buffer_size = 20.0; // Maximum buffer size
+static double const		buffer_size = 40.0; // Maximum buffer size
 static double           buffer_level = 0.0; /* Updated buffer level of the downloaded segment */
-static unsigned         seg_length = 2U; /* Lenght of the segments to be downloaded */
+static unsigned         seg_length = 4U; /* Lenght of the segments to be downloaded */
 static unsigned         playout = 0U; /* States whether the playout is running [1] or is paused (stall or buffering) [0] */
-static unsigned         min_init_bs = 4U; /* Minimum initial[/stall] buffer size (sec) to [re]start playout */
+static unsigned         min_init_bs = 8U; /* Minimum initial[/stall] buffer size (sec) to [re]start playout */
 static lsquic_time_t    playout_t; /* Start playout time */
 static bool             still_seg = true; /* States whether there are still segments to be downloaded (based on the manifest file) */
-static double           stalls[] = {0.0, 0.0, 0.0, 0.0, 0.0};
+static double           stalls[N_MAX_SEG] = {0.0};
 static unsigned         stall_ind = 0U; // First stall is the initial buffering
 static lsquic_time_t    stall_t; /* Start stall time */
-static const char       FP_PATH[] = "sintel/";
+static const char       FP_PATH[] = "tos1_h264/";
 static const char       SP_PATH[] = "/segment_";
 static const char       EXT[] = ".m4s";
 static unsigned         seg_ind = 1U;
-static char             *seg_paths[N_REP] = {"sintel/235/segment_1.m4s", "sintel/376/segment_1.m4s", "sintel/560/segment_1.m4s", "sintel/752/segment_1.m4s", "sintel/1053/segment_1.m4s", "sintel/1758/segment_1.m4s", "sintel/2359/segment_1.m4s", "sintel/3015/segment_1.m4s", "sintel/4312/segment_1.m4s", "sintel/5823/segment_1.m4s"}; /* To be actually parsed from an MPD file but done without loss of generality (Not considering the initialization segment) */
-static const int        seg_bitrates[N_REP] = {235, 376, 560, 752, 1053, 1758, 2359, 3015, 4312, 5823}; /* [kbps] To be actually parsed from an MPD file but done without loss of generality */
+static char             *seg_paths[N_REP] = {"tos1_h264/107/segment_1.m4s", "tos1_h264/240/segment_1.m4s", "tos1_h264/346/segment_1.m4s", "tos1_h264/715/segment_1.m4s", "tos1_h264/1347/segment_1.m4s", "tos1_h264/2426/segment_1.m4s", "tos1_h264/4121/segment_1.m4s"}; /* To be actually parsed from an MPD file but done without loss of generality (Not considering the initialization segment) */
+static const int        seg_bitrates[N_REP] = {107, 240, 346, 715, 1347, 2426, 4121}; /* [kbps] To be actually parsed from an MPD file but done without loss of generality */
 //static double qualities[N_MAX_SEG] = {0.0}; /* Max. number of segments for average quality computation */
 static int              seg_chosen_q[N_MAX_SEG]; /* Chosen representation quality for each downloaded segment. If -1, the segment has not been yet downloaded */
 static int              re_seg_chosen_q[N_MAX_SEG]; /* Chosen representation quality for each re-transmitted segment. If -1, the segment has not been re-transmitted */
@@ -163,9 +182,10 @@ static int              re_seg_chosen_q[N_MAX_SEG]; /* Chosen representation qua
 static unsigned         qualities_ind = 0U; /* Index for values substitution */
 static const double		alpha = .4, betha = .6;
 static unsigned         rep_seg_ind = 1U;
-static double           rep_seg_time = 2.0; /* Left time for the segment to be fully reproduced (2s -> ... -> 0s) */
+static double           rep_seg_time = 4.0; /* Left time for the segment to be fully reproduced (2s -> ... -> 0s) */
 // double const            available_time_off = 0.25; // Minimum offset for the available_time array in the ABR optimization strategy (deadline[i] has to be >= available_time_off) [to avoid infeasibility]
-static const char       WEIGHTS_FILENAME[] = "sintel/weights.txt";
+static const char       WEIGHTS_FILENAME[] = "tos1_h264/weights.txt";
+static char             METRICS_FILENAME[] = "metrics_abr_0.csv";
 
 /* Update the buffer size when required */
 static void update_buff(bool sr){
@@ -173,13 +193,13 @@ static void update_buff(bool sr){
 		double elapsed_time = (double) (lsquic_time_now() - playout_t) / 1000000;
 		playout_t = lsquic_time_now();
 		if (elapsed_time > buffer_level) {
-			if (stall_ind + 1 > (sizeof(stalls)/sizeof(stalls[0]) - 1)){
-				printf("Try to realloc stalls!\n");
-				double* stalls_p = stalls;
-				stalls_p = realloc(stalls_p, 2 * (stall_ind + 1) * sizeof(double)); // Double the stalls array size re-allocating some memory
-				for (unsigned i = stall_ind; i < 2 * (stall_ind + 1); i++)
-					stalls[i] = 0.0; // Initialize the stalls to 0 (No-stalling happened)
-			}
+			// if (stall_ind + 1 > (sizeof(stalls)/sizeof(stalls[0]) - 1)){
+				// printf("Try to realloc stalls!\n");
+				// double* stalls_p = stalls;
+				// stalls_p = realloc(stalls_p, 2 * (stall_ind + 1) * sizeof(double)); // Double the stalls array size re-allocating some memory
+				// for (unsigned i = stall_ind; i < 2 * (stall_ind + 1); i++)
+					// stalls[i] = 0.0; // Initialize the stalls to 0 (No-stalling happened)
+			// }
 			rep_seg_time = 0.0;
 			rep_seg_ind += floor((elapsed_time - rep_seg_time) / seg_length);
 			playout = 0;
@@ -734,10 +754,10 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 		printf("Bitrate: %d\n", seg_bitrates[st_h->client_ctx->hcc_ret_pe->seg_q]);
 		printf("Throughput: %.3Lf\n", t_stats.throughput);
 		printf("Smoothed throughput: %.3Lf\n", t_stats.s_throughput);
-		printf("Estimated throughput: %.3Lf\n", t_stats.e_throughput);
-		printf("Re-transmission time: %.3Lf\n", seg_bitrates[st_h->client_ctx->hcc_ret_pe->seg_q] * seg_length / t_stats.e_throughput);
+		printf("Estimated throughput: %.3Lf\n", t_stats.e_throughput[qualities_ind]);
+		printf("Re-transmission time: %.3Lf\n", seg_bitrates[st_h->client_ctx->hcc_ret_pe->seg_q] * seg_length / t_stats.e_throughput[qualities_ind]);
 		/* Until the available playout time before the to-be-re-transmitted segment is lower than the time required to re-transmit the segment check the next to-be-re-transmitted element */
-		while(available_time < (seg_bitrates[st_h->client_ctx->hcc_ret_pe->seg_q] * seg_length / t_stats.e_throughput)){
+		while(available_time < (seg_bitrates[st_h->client_ctx->hcc_ret_pe->seg_q] * seg_length / t_stats.e_throughput[qualities_ind])){
 			if ((temp_pe = TAILQ_NEXT(st_h->client_ctx->hcc_ret_pe, next_pe))){
 				st_h->client_ctx->hcc_ret_pe = temp_pe;
 				available_time = rep_seg_time + (st_h->client_ctx->hcc_ret_pe->seg_ind - rep_seg_ind) * seg_length;
@@ -1144,6 +1164,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
         return;
     }
 	
+	printf("Read bytes: %.0ld, time_now(): %.0ld, st_h->sh_created: %.0ld, download time: %.0ld\n", st_h->sh_nread, lsquic_time_now(), st_h->sh_created, (lsquic_time_now() - st_h->sh_created) / 1000000);
 	long double new_throughput = (long double) st_h->sh_nread * 8 / ((long double) 1000 * (lsquic_time_now() - st_h->sh_created) / 1000000); // [kbps]
 	/* Smoothed throughput computation */
 	if (t_stats.s_throughput == 0)
@@ -1153,10 +1174,10 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
     /* Throughput computation */
     t_stats.throughput = new_throughput;
 	// Estimated Throughput is the MIN(Smoothed and Normal)
-	t_stats.e_throughput = MIN(t_stats.throughput, t_stats.s_throughput);
+	t_stats.e_throughput[qualities_ind] = MIN(t_stats.throughput, t_stats.s_throughput);
 	printf("Throughput: %.3Lf kbps\n", t_stats.throughput);
 	printf("Smoothed throughput: %.3Lf kbps\n", t_stats.s_throughput);
-	printf("Estimated throughput: %.3Lf kbps\n", t_stats.e_throughput);
+	printf("Estimated throughput: %.3Lf kbps\n", t_stats.e_throughput[qualities_ind]);
 
     LSQ_INFO("%s called", __func__);
     struct http_client_ctx *const client_ctx = st_h->client_ctx;
@@ -1170,7 +1191,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 		// SARA parameters computation
 		if (st_h->client_ctx->chosen_abr == 6) {
 			s_stats.weights[seg_ind - 1] = s_stats.W[seg_chosen_q[qualities_ind]][seg_ind - 1];
-			s_stats.down_rate[seg_ind - 1] = t_stats.e_throughput;
+			s_stats.down_rate[seg_ind - 1] = t_stats.e_throughput[qualities_ind];
 			long double num = 0.0;
 			long double den = 0.0;
 			unsigned start_ind = 0;
@@ -1187,6 +1208,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 		printf("Transmitted segment from path: %s\n", st_h->path);
 		/* Buffer update */
 		update_buff(true); // [true] is "Segment Received"
+		t_stats.b_level[qualities_ind] = buffer_level;
 		printf("Buffer size: %.3f sec\n", buffer_level);
 		printf("Segment reproduced: %u\n", rep_seg_ind);
 		printf("Time left for reproduced segment: %.3f sec\n", rep_seg_time);
@@ -1295,11 +1317,11 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 				
 				// ABR SELECTION
 				if (client_ctx->chosen_abr == 1)
-					error = getMaxJCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.e_throughput, seg_bitrates, available_times, min_q, sol);
+					error = getMaxJCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.e_throughput[qualities_ind], seg_bitrates, available_times, min_q, sol);
 				else if (client_ctx->chosen_abr == 2)
-					error = getMaxMinJCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.e_throughput, seg_bitrates, available_times, min_q, sol);
+					error = getMaxMinJCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.e_throughput[qualities_ind], seg_bitrates, available_times, min_q, sol);
 				else if (client_ctx->chosen_abr == 3)
-					error = getMaxJQCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.e_throughput, alpha, betha, seg_bitrates, available_times, min_q, sol);
+					error = getMaxJQCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.e_throughput[qualities_ind], alpha, betha, seg_bitrates, available_times, min_q, sol);
 				else {
 					printf("ERROR: CHOSEN_ABR HAS NO VALID VALUE!\n");
 					return;
@@ -1385,7 +1407,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 				unsigned chosen_q = 0;
 				
 				for (ssize_t i = N_REP - 1; i >= 0; i--) {
-					if ((1 - 0.1) * (double) t_stats.e_throughput > seg_bitrates[i]) { // 0.1 parameter
+					if ((1 - 0.1) * (double) t_stats.e_throughput[qualities_ind] > seg_bitrates[i]) { // 0.1 parameter
 						chosen_q = i;
 						break;
 					}
@@ -1424,7 +1446,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 				if (m < b_stats.m_star) {
 					unsigned m_pr = 0;
 					for (unsigned i = 0; i < N_REP; i++) {
-						if (seg_bitrates[i] <= MAX(t_stats.e_throughput, seg_bitrates[0])) { // m' = min m such that Sm/p ≤ max[r, S1/p]
+						if (seg_bitrates[i] <= MAX(t_stats.e_throughput[qualities_ind], seg_bitrates[0])) { // m' = min m such that Sm/p ≤ max[r, S1/p]
 							m_pr = i;
 							break;
 						}
@@ -1463,33 +1485,80 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 				conn_h->ch_n_reqs = MIN(client_ctx->hcc_total_n_reqs,
 														client_ctx->hcc_reqs_per_conn);
 				client_ctx->hcc_total_n_reqs -= conn_h->ch_n_reqs;
+// Minh - Add BOLA ABR - ADD - S
+            } else if (client_ctx->chosen_abr == 50) { // BOLA - Minh
+                
+                b_m_stats.max_value = 0;
+                b_m_stats.gma = 5.0/seg_length;
+                b_m_stats.SM = DBL_MAX;
+
+                // get segment size
+                for (int i = 0; i < N_REP; i++) {
+                    b_m_stats.Sm[i] = s_stats.W[i][seg_ind];
+                }
+				#if 0
+				b_m_stats.SM = b_m_stats.Sm[N_REP-1]; // get the min segment size    /* DANIELE - Why min segment size is N_REP - 1? */
+				#else
+				b_m_stats.SM = b_m_stats.Sm[0];
+				#endif
+
+                b_m_stats.V = ((buffer_size*1.0/seg_length)-1.0)/(b_m_stats.Vm[N_REP-1]+(b_m_stats.gma*seg_length));
+
+                // equation 9
+                for (int i = 0; i < N_REP; i++) {
+                    b_m_stats.value[i] = (b_m_stats.V*(b_m_stats.Vm[i] + b_m_stats.gma*seg_length) - (buffer_level*1.0)/seg_length)/b_m_stats.Sm[i];
+                }
+
+                //choose next_quality_idx that maximize vaWe still need a minimum buffer size 3p for the aWe still need a minimum buffer size 3p for the algorithm to work effectivelylgorithm to work effectivelylue
+                for(int i = 0; i < N_REP; i++) {
+                    // skip representations whose objective < 0
+                    if (b_m_stats.value[i] < 0) {
+                        continue;
+                    }
+
+                    if (b_m_stats.value[i] > b_m_stats.max_value)
+                    {
+                        b_m_stats.max_value = b_m_stats.value[i];
+                        b_m_stats.m_star = i;
+                    }
+                }
+                // pause for max[p · (Q − Q_d_max + 1), 0]
+                // printf("Sleep for %d s\n", (unsigned int) MAX(seg_length * (buffer_level - b_stats.Q_d_max + 1), 0));
+                // sleep((unsigned int) MAX(seg_length * (buffer_level - b_stats.Q_d_max + 1), 0)); // Sleep for x seconds until the buffer level allow new segments download
+				if (buffer_level + seg_length > buffer_size){
+					printf("Sleep for %d s\n", (unsigned int) ceil((double) seg_length - (buffer_size - buffer_level)));
+					sleep((unsigned int) ceil((double) seg_length - (buffer_size - buffer_level))); // Sleep for x seconds until the buffer level allow new segments download
+				}
+                
+                ++client_ctx->hcc_still_segment;
+                struct path_elem *pe;
+                pe = calloc(1, sizeof(*pe));
+                unsigned next_seg_q_ind = b_m_stats.m_star; // Gather segment chosen quality
+                pe->path = seg_paths[next_seg_q_ind]; /* Path of the next requested segment */
+                pe->seg_ind = seg_ind;
+                pe->seg_q = next_seg_q_ind;
+                printf("Downloading seg. %d, rep. %d, path: '%s'\n", seg_ind, next_seg_q_ind, pe->path);
+                TAILQ_INSERT_TAIL(&client_ctx->hcc_path_elems, pe, next_pe);
+                seg_chosen_q[++qualities_ind] = next_seg_q_ind;
+                conn_h->ch_n_reqs = MIN(client_ctx->hcc_total_n_reqs,
+                                                        client_ctx->hcc_reqs_per_conn);
+                client_ctx->hcc_total_n_reqs -= conn_h->ch_n_reqs;
+// Minh - Add BOLA ABR - ADD - E                
 			} else if (client_ctx->chosen_abr == 6) { // SARA select
-			
-				// s_stats.weights[seg_ind - 1] = s_stats.W[seg_chosen_q[qualities_ind-1]][seg_ind - 1];
-				// s_stats.down_rate[seg_ind - 1] = t_stats.e_throughput;
-				
-				// long double num = 0.0;
-				// long double den = 0.0;
-				
-				// unsigned start_ind = 0;
-				// if (seg_ind > AVG_COUNT)
-					// start_ind = seg_ind - AVG_COUNT;
-				// for (size_t i = start_ind; i < seg_ind; i++) {
-					// printf("i: %zu, count: %u, seg_ind: %u\n", i, AVG_COUNT, seg_ind);
-					// num += s_stats.weights[i];
-					// den += s_stats.weights[i] / s_stats.down_rate[i];
-					// printf("num: %.3Lf, den: %Lf\n", num, den);
-				// }
-				
-				// printf("SARA 1\n");
-				
-				// s_stats.H = (double) num / den;
 				
 				unsigned l = 0;
 				s_stats.delta = 0.0;
+
+                // Minh - ADD - S
+                printf("MInh: H = %.2f\t Buffer level = %.2f", s_stats.H, buffer_level);
+                // Minh - ADD - E
+
 				if (buffer_level > s_stats.I){
 					if (s_stats.W[seg_chosen_q[qualities_ind]][seg_ind] / s_stats.H > buffer_level - s_stats.I) {
-						for (int i = seg_chosen_q[qualities_ind]; i >= 0; i--) {
+
+                        printf("MInh: W/H = %.2Lf\n", s_stats.W[seg_chosen_q[qualities_ind]][seg_ind] / s_stats.H);
+						
+                        for (int i = seg_chosen_q[qualities_ind]; i >= 0; i--) {
 							if (s_stats.W[i][seg_ind] / s_stats.H <= buffer_level - s_stats.I) {
 								l = (unsigned) i;
 								break;
@@ -1497,8 +1566,12 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						}
 					} else if (buffer_level <= s_stats.B_alpha) { // Additive increase
 						printf("Additive Increase!\n");
-						if (s_stats.W[seg_chosen_q[qualities_ind]][seg_ind] / s_stats.H <= buffer_level - s_stats.I)
-							l = seg_chosen_q[qualities_ind] + 1;
+                        // Minh - MOD - S
+                        unsigned qualities_ind_increased = seg_chosen_q[qualities_ind] + 1;
+                        
+						if (s_stats.W[qualities_ind_increased][seg_ind] / s_stats.H < buffer_level - s_stats.I)
+							l = qualities_ind_increased;
+                        // Minh - MOD - E
 						else
 							l = seg_chosen_q[qualities_ind];
 					} else if (buffer_level <= s_stats.B_betha) { // Aggressive switching
@@ -1513,7 +1586,9 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						}
 					} else if (buffer_level > s_stats.B_betha) { // Delayed Download
 						printf("Delayed Download!\n");
-						l = seg_chosen_q[qualities_ind-1];
+                        // Minh - MOD - S
+                        l = seg_chosen_q[qualities_ind];
+                        // Minh - MOD - E
 						for (int i = N_REP - 1; i >= (int) seg_chosen_q[qualities_ind]; i--) {
 							if (s_stats.W[i][seg_ind] / s_stats.H <= buffer_level - s_stats.B_alpha) {
 								l = (unsigned) i;
@@ -1524,6 +1599,9 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					} else
 						l = seg_chosen_q[qualities_ind];
 				}
+                else {
+                    l = 0;
+                }
 				
 				if (l >= N_REP)
 					l = N_REP - 1;
@@ -2272,9 +2350,14 @@ main (int argc, char **argv)
 	stall_t = lsquic_time_now();
 	seg_chosen_q[0] = 0; // The quality of the first downloaded segment
 	b_stats.gamma_p = 5.0;
+	// SARA stats
 	s_stats.I = seg_length;
 	s_stats.B_alpha = 5 * seg_length;
 	s_stats.B_betha = 10 * seg_length;
+	// BOLA stats
+	b_m_stats.gma = 5.0/seg_length;
+	b_m_stats.SM = DBL_MAX;
+	b_m_stats.max_value = 0;
 	
 	// Initialization of segments qualities
 	for (unsigned i = 1; i < sizeof(seg_chosen_q) / sizeof(seg_chosen_q[0]); ++i){
@@ -2288,6 +2371,12 @@ main (int argc, char **argv)
 	for (unsigned i = 0; i < N_REP; ++i){
 		b_stats.v_m[i] = log((double) seg_bitrates[i] / seg_bitrates[0]);
 	}
+// Minh - Add BOLA ABR - ADD - S
+    // Initialization of v_m values for BOLA
+    for (unsigned i = 0; i < N_REP; ++i){
+        b_m_stats.Vm[i] = log((double) seg_bitrates[i] / seg_bitrates[0]);
+    }
+// Minh - Add BOLA ABR - ADD - E    
 	// Initialization of W values for SARA
 	weights_init(s_stats.W, WEIGHTS_FILENAME);
 	
@@ -2501,6 +2590,9 @@ main (int argc, char **argv)
         }
     }
 	
+	// Set file path for metrics
+	snprintf(METRICS_FILENAME, sizeof(METRICS_FILENAME), "%s%i%s", "metrics_abr_", client_ctx.chosen_abr, ".csv");
+	
 	if (client_ctx.chosen_abr == 6) // SARA
 		min_init_bs = s_stats.I;
 
@@ -2554,8 +2646,12 @@ main (int argc, char **argv)
             exit(EXIT_FAILURE);
         }
     }
-    else
+    else {
         create_connections(&client_ctx);
+	}
+	
+	// RUN SYSTEM BASH "NETWORK TRACES" SCRIPT
+	//int status = system("sudo ./bin/A_2018_01_26_11_26_26_good_4M.sh &");
 
     LSQ_DEBUG("entering event loop");
 	
@@ -2574,6 +2670,13 @@ main (int argc, char **argv)
 			(long double) s_stat_req.n / elapsed,
 			(long double) s_stat_downloaded_bytes / elapsed);
 		fprintf(stats_fh, "read handler count %lu\n", prog.prog_read_count);
+	}
+	
+	/* CREATE OUTPUT CSV FILE */
+	FILE *fp = fopen(METRICS_FILENAME,"wa");
+	fprintf(fp, "THROUGHPUT,BUFFER,QUALITY\n");
+	for (size_t i = 0; i < N_MAX_SEG; i++) {
+		fprintf(fp, "%.2Lf,%.3f,%i\n", t_stats.e_throughput[i], t_stats.b_level[i], seg_chosen_q[i]);
 	}
 	
     prog_cleanup(&prog);
