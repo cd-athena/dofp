@@ -155,7 +155,7 @@ static struct           bola_m_stats b_m_stats;
 // Minh - Add BOLA ABR - ADD - E
 static struct           sara_stats s_stats;
 static struct           wlb_stats w_stats;
-static double const		buffer_size = 20.0; // Maximum buffer size
+static double const		buffer_size = 40.0; // Maximum buffer size
 static double           buffer_level = 0.0; /* Updated buffer level of the downloaded segment */
 static unsigned         seg_length = 4U; /* Lenght of the segments to be downloaded */
 static unsigned         playout = 0U; /* States whether the playout is running [1] or is paused (stall or buffering) [0] */
@@ -182,7 +182,7 @@ static double           rep_seg_time = 4.0; /* Left time for the segment to be f
 static const char       WEIGHTS_FILENAME[] = "tos1_h264/weights.txt";
 static char             METRICS_FILENAME[] = "metrics_abr_00.csv";
 static char             JSON_FILENAME[] = "itu-p1203_abr_00.json";
-static const float      FPS = 25.0;
+static const float      FPS = 24.0;
 static const char       DEVICE[] = "pc";
 static const char       DISPLAYSIZE[] = "1920x1080";
 static const unsigned   VIEWINGDISTANCE = 150U;
@@ -193,17 +193,10 @@ static void update_buff(bool sr){
 		double elapsed_time = (double) (lsquic_time_now() - playout_t) / 1000000;
 		playout_t = lsquic_time_now();
 		if (elapsed_time > buffer_level) {
-			// if (stall_ind + 1 > (sizeof(stalls)/sizeof(stalls[0]) - 1)){
-				// printf("Try to realloc stalls!\n");
-				// double* stalls_p = stalls;
-				// stalls_p = realloc(stalls_p, 2 * (stall_ind + 1) * sizeof(double)); // Double the stalls array size re-allocating some memory
-				// for (unsigned i = stall_ind; i < 2 * (stall_ind + 1); i++)
-					// stalls[i] = 0.0; // Initialize the stalls to 0 (No-stalling happened)
-			// }
 			rep_seg_ind += floor((buffer_level - rep_seg_time) / seg_length);
 			rep_seg_time = 0.0;
 			playout = 0;
-			stalls_t[stall_ind] = (lsquic_time_now() - start_t) / 1000000;
+			stalls_t[stall_ind] = (rep_seg_ind + 1) * seg_length;
 			stall_t = lsquic_time_now() - ((lsquic_time_t) elapsed_time - buffer_level) * 1000000;
 			buffer_level = 0.0;
 		} else {
@@ -722,7 +715,7 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 {
 	
 	/* Buffer update */
-	// update_buff(false); // [false] is "normal Time Update"
+	update_buff(false); // [false] is "normal Time Update"
 	// printf("Buffer size: %.3f sec\n", buffer_level);
 	
     const int pushed = lsquic_stream_is_pushed(stream);
@@ -1493,10 +1486,10 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					}
 					
 					// If we don't have space in the buffer, wait sometime before sending request for new segment
-					if (buffer_level > buffer_size){
-						printf("==> FULL BUFFER! Sleep for %d s\n", (unsigned int) ceil((double) seg_length - (buffer_size - buffer_level)));
-						sleep((unsigned int) seg_length); // Sleep for x seconds until the buffer level allow new segments download
-					}
+					// if (buffer_level > buffer_size){
+						// printf("==> FULL BUFFER! Sleep for %d s\n", (unsigned int) ceil((double) seg_length - (buffer_size - buffer_level)));
+						// sleep((unsigned int) seg_length); // Sleep for x seconds until the buffer level allow new segments download
+					// }
 					
 					++client_ctx->hcc_still_segments;
 					struct path_elem *pe;
@@ -1549,10 +1542,10 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					}
 					// pause for max[p · (Q − Q_d_max + 1), 0]
 					// If we don't have space in the buffer, wait sometime before sending request for new segment
-					if (buffer_level > buffer_size){
-						printf("==> FULL BUFFER! Sleep for %d s\n", (unsigned int) ceil((double) seg_length - (buffer_size - buffer_level)));
-						sleep((unsigned int) seg_length); // Sleep for x seconds until the buffer level allow new segments download
-					}
+					// if (buffer_level > buffer_size){
+						// printf("==> FULL BUFFER! Sleep for %d s\n", (unsigned int) ceil((double) seg_length - (buffer_size - buffer_level)));
+						// sleep((unsigned int) seg_length); // Sleep for x seconds until the buffer level allow new segments download
+					// }
 					
 					++client_ctx->hcc_still_segments;
 					struct path_elem *pe;
@@ -2756,22 +2749,22 @@ main (int argc, char **argv)
 	
 	/* CREATE OUTPUT JSON FILE */
 	FILE *jfp = fopen(JSON_FILENAME,"wa");
-	fprintf(jfp, "{\"I13\": {\"segments\": [");
+	fprintf(jfp, "{\"I11\":{\"segments\":[],\"streamId\":42},\"I13\":{\"segments\":[");
 	unsigned int start = 0U;
-	fprintf(jfp, "{\"bitrate\": %i,\"codec\": \"h264\",\"duration\": %u,\"fps\": %.1f,\"resolution\": \"%s\",\"start\": %u}", 
+	fprintf(jfp, "{\"bitrate\":%i,\"codec\":\"h264\",\"duration\":%u,\"fps\":%.1f,\"resolution\":\"%s\",\"start\":%u}", 
 			seg_bitrates[seg_chosen_q[0]], seg_length, FPS, seg_res[seg_chosen_q[0]], start);
 	start += seg_length;
 	for (size_t i = 1; i < N_MAX_SEG; i++) {
-		fprintf(jfp, ",{\"bitrate\": %i,\"codec\": \"h264\",\"duration\": %u,\"fps\": %.1f,\"resolution\": \"%s\",\"start\": %u}", 
+		fprintf(jfp, ",{\"bitrate\": %i,\"codec\":\"h264\",\"duration\":%u,\"fps\":%.1f,\"resolution\":\"%s\",\"start\":%u}", 
 			seg_bitrates[seg_chosen_q[i]], seg_length, FPS, seg_res[seg_chosen_q[i]], start);
 	start += seg_length;
 	}
-	fprintf(jfp, "],\"streamId\": 42},\"I23\": {\"stalling\": [");
+	fprintf(jfp, "],\"streamId\":42},\"I23\":{\"stalling\":[");
 	printf("[%.3f,%.3f]\n", stalls_t[0], stalls_d[0]);
 	fprintf(jfp, "[%.3f,%.3f]", stalls_t[0], stalls_d[0]);
 	for (size_t j = 1; j < stall_ind; j++)
 		fprintf(jfp, ",[%.3f,%.3f]", stalls_t[j], stalls_d[j]);
-	fprintf(jfp, "],\"streamId\": 42}, \"IGen\": {\"device\": \"%s\", \"displaySize\": \"%s\", \"viewingDistance\": \"%u%s\"}}\n", DEVICE, DISPLAYSIZE, VIEWINGDISTANCE, "cm");
+	fprintf(jfp, "],\"streamId\": 42},\"IGen\":{\"device\":\"%s\",\"displaySize\":\"%s\",\"viewingDistance\":\"%u%s\"}}\n", DEVICE, DISPLAYSIZE, VIEWINGDISTANCE, "cm");
 	
     prog_cleanup(&prog);
     if (promise_fd >= 0)
