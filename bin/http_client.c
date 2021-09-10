@@ -110,6 +110,7 @@ static unsigned long s_stat_downloaded_bytes;
 struct throughput_stats
 {
     long double         throughput;
+	long double         tot_throughput;
     long double         s_throughput;
 	long double         e_temp_throughput;
     long double         e_throughput [N_MAX_SEG];
@@ -398,6 +399,7 @@ struct http_client_ctx {
 	TAILQ_HEAD(, path_elem)      hcc_ret_path_elems; // Re-transmission queue
     struct path_elem            *hcc_ret_pe;
 	unsigned                     hcc_open_ret_streams;
+	unsigned                     hcc_open_streams;
 	unsigned                     hcc_still_ret_segments; // Segments missing to be re-transmitted from current re-transmission window
 	
 	unsigned                     chosen_abr; // {1 -> MaxJ; 2 -> MaxMinJ (MaxJ*); 3 -> MaxJ*Q*; 4 -> MaxR select; 5 -> BOLA}
@@ -499,11 +501,13 @@ create_connections (struct http_client_ctx *client_ctx)
 static void
 create_streams (struct http_client_ctx *client_ctx, lsquic_conn_ctx_t *conn_h)
 {
+	t_stats.e_temp_throughput /= (client_ctx->hcc_still_ret_segments + client_ctx->hcc_still_segments); // Throughput subdivision for number of streams to be opened
     while (conn_h->ch_n_reqs - conn_h->ch_n_cc_streams &&
-            conn_h->ch_n_cc_streams < client_ctx->hcc_cc_reqs_per_conn)
+            conn_h->ch_n_cc_streams < client_ctx->hcc_cc_reqs_per_conn && client_ctx->hcc_open_streams < (client_ctx->hcc_still_ret_segments + client_ctx->hcc_still_segments))
     {
         lsquic_conn_make_stream(conn_h->conn);
         conn_h->ch_n_cc_streams++;
+		++client_ctx->hcc_open_streams;
     }
 }
 
@@ -747,10 +751,12 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
     st_h->client_ctx = stream_if_ctx;
 	st_h->sh_created = lsquic_time_now();
 	
-	// struct path_elem *temp_pe;
+	struct path_elem *temp_pe;
+	temp_pe = calloc(1, sizeof(*temp_pe));
 	
-	//transmission:
+	transmission:
 		if (!st_h->client_ctx->hcc_cur_pe) {
+			printf("====> INIT QUEUE !\n");
 			st_h->client_ctx->hcc_cur_pe = TAILQ_FIRST(
 												&st_h->client_ctx->hcc_path_elems);
 		} else if (st_h->client_ctx->hcc_still_segments) {
@@ -760,9 +766,8 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 				sleep((unsigned int) seg_length); // Sleep for x seconds until the buffer level allow new segments download
 				st_h->sh_created = lsquic_time_now();
 			}
-			st_h->client_ctx->hcc_cur_pe = TAILQ_NEXT(
-											st_h->client_ctx->hcc_cur_pe, next_pe);
-			if (!st_h->client_ctx->hcc_cur_pe){ // If there are no more available new segments to be downloaded throw an error
+			temp_pe = TAILQ_NEXT(st_h->client_ctx->hcc_cur_pe, next_pe);
+			if (!temp_pe){ // If there are no more available new segments to be downloaded throw an error
 				if (st_h->client_ctx->hcc_still_ret_segments) { // If we still have segments to be retransmitted let's try that
 					goto retransmission;
 				} else { // Otherwise close the stream
@@ -770,7 +775,8 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 					lsquic_stream_close(stream);
 					return st_h;
 				}
-			}
+			} else
+				st_h->client_ctx->hcc_cur_pe = temp_pe;
 		}
 		else if (st_h->client_ctx->hcc_still_ret_segments) {
 			goto retransmission;
@@ -783,21 +789,21 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 		// temp_pe = calloc(1, sizeof(*temp_pe));
 		//if(!TAILQ_EMPTY(&st_h->client_ctx->hcc_ret_path_elems) && (st_h->client_ctx->hcc_open_ret_streams < 1)) {
 		if(!TAILQ_EMPTY(&st_h->client_ctx->hcc_ret_path_elems) && st_h->client_ctx->hcc_still_ret_segments) {
-			// if (st_h->client_ctx->hcc_ret_pe){
-				// temp_pe = TAILQ_NEXT(st_h->client_ctx->hcc_ret_pe, next_pe);
-				// if (!temp_pe) { // If it's the last element of the queue
-					// if (st_h->client_ctx->hcc_still_segments) { // If we still have segments to be retransmitted let's try that
-						// goto transmission;
-					// } else {
-						// LSQ_ERROR("NO SEGMENTS IN ANY QUEUE.");
-						// lsquic_stream_close(stream);
-						// return st_h;
-					// }
-				// } else
-					// st_h->client_ctx->hcc_ret_pe = temp_pe;
-			// } else {
-				// st_h->client_ctx->hcc_ret_pe = TAILQ_FIRST(&st_h->client_ctx->hcc_ret_path_elems);
-			// }
+			if (st_h->client_ctx->hcc_cc_reqs_per_conn > 1) {
+				if (st_h->client_ctx->hcc_ret_pe){
+					temp_pe = TAILQ_NEXT(st_h->client_ctx->hcc_ret_pe, next_pe);
+					if (!temp_pe) { // If it's the last element of the queue
+						if (st_h->client_ctx->hcc_still_segments) { // If we still have segments to be retransmitted let's try that
+							goto transmission;
+						} else {
+							LSQ_ERROR("NO SEGMENTS IN ANY QUEUE.");
+							lsquic_stream_close(stream);
+							return st_h;
+						}
+					} else
+						st_h->client_ctx->hcc_ret_pe = temp_pe;
+				}
+			}
 			if (!st_h->client_ctx->hcc_ret_pe)
 				st_h->client_ctx->hcc_ret_pe = TAILQ_FIRST(&st_h->client_ctx->hcc_ret_path_elems);
 			/* Path has been set. Check whether the throughput is enough to re-download the segment in time before the playout of its low-quality version */
@@ -806,8 +812,6 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 				available_time = rep_seg_time + (st_h->client_ctx->hcc_ret_pe->seg_ind - rep_seg_ind - 1) * seg_length; // .. (st_h->client_ctx->hcc_ret_pe->seg_ind (+1) - rep_seg_ind (-1)) * ..
 			printf("Available time: %.3f\n", available_time);
 			printf("Bitrate: %d\n", seg_bitrates[st_h->client_ctx->hcc_ret_pe->seg_q]);
-			printf("Throughput: %.3Lf\n", t_stats.throughput);
-			printf("Smoothed throughput: %.3Lf\n", t_stats.s_throughput);
 			printf("Estimated throughput: %.3Lf\n", t_stats.e_temp_throughput);
 			printf("Re-transmission time: %.3Lf\n", seg_bitrates[st_h->client_ctx->hcc_ret_pe->seg_q] * seg_length / t_stats.e_temp_throughput);
 			/* Until the available playout time before the to-be-re-transmitted segment is lower than the time required to re-transmit the segment check the next to-be-re-transmitted element */
@@ -829,7 +833,7 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 			// }
 			st_h->path = st_h->client_ctx->hcc_ret_pe->path; // Set the segment path
 			st_h->is_ret = true; // It's a re-transmission
-			++st_h->client_ctx->hcc_open_ret_streams; // This stream belongs to the re-transmission ones
+			//++st_h->client_ctx->hcc_open_ret_streams; // This stream belongs to the re-transmission ones
 			goto process_path; // Process the request
 		} else {
 			LSQ_ERROR("NO SEGMENTS IN RETRANSMISSION QUEUE.");
@@ -1215,7 +1219,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 	--conn_h->ch_n_reqs;
 	--conn_h->ch_n_cc_streams;
 	
-	// printf("SRS: %i, SS: %i", client_ctx->hcc_still_ret_segments, client_ctx->hcc_still_segments);
+	printf("SRS: %i, SS: %i", client_ctx->hcc_still_ret_segments, client_ctx->hcc_still_segments);
 	
 	if (client_ctx->hcc_still_ret_segments || client_ctx->hcc_still_segments) {
 	
@@ -1233,8 +1237,10 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 		printf("Throughput: %.3Lf kbps\n", t_stats.throughput);
 		printf("Smoothed throughput: %.3Lf kbps\n", t_stats.s_throughput);
 		t_stats.e_temp_throughput = MIN(t_stats.throughput, t_stats.s_throughput);
+		t_stats.tot_throughput += t_stats.e_temp_throughput; // Useful for computing the total throughput in multistreams scenarios
 		// t_stats.e_temp_throughput = t_stats.throughput;
 		printf("Estimated throughput: %.3Lf kbps\n", t_stats.e_temp_throughput);
+		printf("Total throughput: %.3Lf kbps\n", t_stats.tot_throughput);
 		LSQ_INFO("%s called", __func__);
 		// struct http_client_ctx *const client_ctx = st_h->client_ctx;
 		// lsquic_conn_t *const conn = lsquic_stream_conn(stream);
@@ -1270,6 +1276,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 			printf("Segment reproduced: %u\n", rep_seg_ind);
 			printf("Time left for reproduced segment: %.3f sec\n", rep_seg_time);
 			--client_ctx->hcc_still_segments;
+			--client_ctx->hcc_open_streams;
 			/* Update seg_paths */
 			++seg_ind;
 			// Check seg_chosen_q size
@@ -1294,7 +1301,8 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 			printf("Buffer size: %.3f sec\n", buffer_level);
 			printf("Segment reproduced: %u\n", rep_seg_ind);
 			printf("Time left for reproduced segment: %.3f sec\n", rep_seg_time);
-			--client_ctx->hcc_open_ret_streams;
+			//--client_ctx->hcc_open_ret_streams;
+			--client_ctx->hcc_open_streams;
 			--client_ctx->hcc_still_ret_segments;
 			printf("Re-Transmitted segment from path: %s\n", st_h->path);
 			w_stats.re_count++;
@@ -1323,6 +1331,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 	abr:
 	/* ABR Algorithm */
 	if (client_ctx->hcc_still_ret_segments == 0 && client_ctx->hcc_still_segments == 0) { // if new segment and re-transmitted segments are received
+		printf("Total throughput: %.3Lf kbps\n", t_stats.tot_throughput);
 		if (rep_seg_ind < seg_ind) { // If there is still playout of reproduction
 			if (buffer_level >= min_init_bs && playout){
 				if (client_ctx->chosen_abr < 4) {
@@ -1372,7 +1381,10 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 								// available_times[i] = (rep_seg_time + (i + start_seg_ind - rep_seg_ind) * seg_length);
 							else // If last segment (next segment to be downloaded)
 								// available_times[i] = (rep_seg_time + (i + start_seg_ind - rep_seg_ind) * seg_length) * 0.9;
-								available_times[i] = rep_seg_time - min_init_bs + (i + start_seg_ind - rep_seg_ind) * seg_length;
+								if (seg_ind < N_MAX_SEG)
+									available_times[i] = rep_seg_time - min_init_bs + (i + start_seg_ind - rep_seg_ind) * seg_length;
+								else
+									available_times[i] = (rep_seg_time + (i + start_seg_ind - rep_seg_ind) * seg_length) * 0.9;
 							printf("available_times[%zu]: %.3f \n", i, available_times[i]);
 						}
 					}
@@ -1386,11 +1398,11 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					
 					// ABR SELECTION
 					if (client_ctx->chosen_abr == 1)
-						error = getMaxJCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.e_temp_throughput, seg_bitrates, available_times, min_q, sol);
+						error = getMaxJCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.tot_throughput, seg_bitrates, available_times, min_q, sol);
 					else if (client_ctx->chosen_abr == 2)
-						error = getMaxMinJCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.e_temp_throughput, seg_bitrates, available_times, min_q, sol);
+						error = getMaxMinJCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.tot_throughput, seg_bitrates, available_times, min_q, sol);
 					else if (client_ctx->chosen_abr == 3)
-						error = getMaxJQCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.e_temp_throughput, alpha, betha, seg_bitrates, available_times, min_q, sol);
+						error = getMaxJQCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.tot_throughput, alpha, betha, seg_bitrates, available_times, min_q, sol);
 					else {
 						printf("ERROR: CHOSEN_ABR HAS NO VALID VALUE!\n");
 						return;
@@ -1748,6 +1760,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 			printf("After closing connection!\n");
 			return;
 		}
+		t_stats.tot_throughput = 0.0; // re-initialization total throughput;
 	}
 	
 	/* End new request for segment */
@@ -1766,38 +1779,44 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
                 (client_ctx->hcc_cc_reqs_per_conn - conn_h->ch_n_cc_streams)));
 		/* CHECK ON TRANSMISSION AND RE-TRANSMISSION QUEUES */
 		printf("SRS: %u, SS: %u\n", client_ctx->hcc_still_ret_segments, client_ctx->hcc_still_segments);
-		if (client_ctx->hcc_still_segments) {			// Check if next stream is re-transmission and - if so - whether it is possible or not
-			printf("\nTransmission\n");
-			create_streams(client_ctx, conn_h); // Open the transmission stream
-		} else if (client_ctx->hcc_still_ret_segments) {
-			printf("\nRe-transmission path update\n");
-			struct path_elem *temp_pe;
-			temp_pe = calloc(1, sizeof(*temp_pe));
-			if (client_ctx->hcc_ret_pe)
-				temp_pe = TAILQ_NEXT(client_ctx->hcc_ret_pe, next_pe);
-			else
-				temp_pe = TAILQ_FIRST(&client_ctx->hcc_ret_path_elems);
-			if (!temp_pe) { // If it's the last element of the queue
-				printf("\nGoing through ABR again\n");
-				goto abr; // Re-execute ABR strategy
+		if (client_ctx->hcc_cc_reqs_per_conn > 1) {
+			if (!client_ctx->hcc_open_streams) {
+				printf("\n==> Transmission Time <==\n");
+				create_streams(client_ctx, conn_h); // Open the transmission stream
 			}
-			client_ctx->hcc_ret_pe = temp_pe;
-			double available_time = 0.0;
-			if (client_ctx->hcc_ret_pe->seg_ind > rep_seg_ind)
-				available_time = rep_seg_time + (client_ctx->hcc_ret_pe->seg_ind - rep_seg_ind - 1) * seg_length;
-			while(available_time < (seg_bitrates[client_ctx->hcc_ret_pe->seg_q] * seg_length / t_stats.e_temp_throughput)){
-				--client_ctx->hcc_still_ret_segments;
-				if ((temp_pe = TAILQ_NEXT(client_ctx->hcc_ret_pe, next_pe))){
-					client_ctx->hcc_ret_pe = temp_pe;
-					available_time = rep_seg_time + (client_ctx->hcc_ret_pe->seg_ind - rep_seg_ind) * seg_length;
-				} else {
+		} else {
+			if (client_ctx->hcc_still_segments) {			// Check if next stream is re-transmission and - if so - whether it is possible or not
+				printf("Transmission\n");
+				create_streams(client_ctx, conn_h); // Open the transmission stream
+			} else if (client_ctx->hcc_still_ret_segments) {
+				printf("\nRe-transmission path update\n");
+				struct path_elem *temp_pe;
+				temp_pe = calloc(1, sizeof(*temp_pe));
+				if (client_ctx->hcc_ret_pe)
+					temp_pe = TAILQ_NEXT(client_ctx->hcc_ret_pe, next_pe);
+				else
+					temp_pe = TAILQ_FIRST(&client_ctx->hcc_ret_path_elems);
+				if (!temp_pe) { // If it's the last element of the queue
 					printf("\nGoing through ABR again\n");
-					goto abr;
+					goto abr; // Re-execute ABR strategy
 				}
+				client_ctx->hcc_ret_pe = temp_pe;
+				double available_time = 0.0;
+				if (client_ctx->hcc_ret_pe->seg_ind > rep_seg_ind)
+					available_time = rep_seg_time + (client_ctx->hcc_ret_pe->seg_ind - rep_seg_ind - 1) * seg_length;
+				while(available_time < (seg_bitrates[client_ctx->hcc_ret_pe->seg_q] * seg_length / t_stats.e_temp_throughput)){
+					--client_ctx->hcc_still_ret_segments;
+					if ((temp_pe = TAILQ_NEXT(client_ctx->hcc_ret_pe, next_pe))){
+						client_ctx->hcc_ret_pe = temp_pe;
+						available_time = rep_seg_time + (client_ctx->hcc_ret_pe->seg_ind - rep_seg_ind) * seg_length;
+					} else {
+						printf("\nGoing through ABR again\n");
+						goto abr;
+					}
+				}
+				create_streams(client_ctx, conn_h); // Open the re-transmission stream
 			}
-			create_streams(client_ctx, conn_h); // Open the re-transmission stream
-		} else
-			goto abr; // Re-execute ABR strategy
+		}
 		/* END CHECK */
     }
     if (st_h->reader.lsqr_ctx)
