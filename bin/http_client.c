@@ -136,6 +136,21 @@ struct bola_m_stats
 };
 // Minh - Add BOLA ABR - ADD - E
 
+// Minh - Add BBA ABR - ADD - S
+/* BBA selects the bitrate based on a function f = a*buffer_level + b
+* 
+*/
+
+struct bba_stats
+{
+    double rS;
+    double cuS;
+    double        a;
+    double        b;
+    unsigned      selected_bitrate;
+}
+// Minh - Add BBA ABR - ADD - E
+
 struct sara_stats
 {
 	double        I;
@@ -1642,6 +1657,76 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 															client_ctx->hcc_reqs_per_conn);
 					client_ctx->hcc_total_n_reqs -= conn_h->ch_n_reqs;
 				}
+                else if (client_ctx->chosen_abr == 7) { // BBA-0 ABR
+                    bba_stats.rS = 0.2*buffer_size;
+                    bba_stats.cuS = 0.7*buffer_size;
+                    bba_stats.a = 1.0*(seg_bitrates[N_REP-1] - seg_bitrates[0])/bba_stats.cuS;
+                    bba_stats.b = seg_bitrates[0] - bba_stats.rS*bba_stats.a;
+
+                    double       f_buff_value = bba_stats.a*buffer_level + bba_stats.b; // (kbps)  
+                    unsigned     m_selectedQualityIndex = 0;
+                    unsigned     m_quality_plus = 0;
+                    unsigned     m_quality_subtract = 0;
+
+                    // determine plus quality
+                    if (seg_chosen_q[qualities_ind] == N_REP0-1)   // if the last selected segment's quality == the highest one
+                      m_quality_plus = N_REP0-1;
+                    else
+                      m_quality_plus = seg_chosen_q[qualities_ind]+1;   // the plus quality is the next higher level
+                    
+                    // determine subtract quality
+                    if (seg_chosen_q[qualities_ind] == 0)
+                      m_quality_subtract = 0;
+                    else
+                      m_quality_subtract = seg_chosen_q[qualities_ind]-1; // the subtract quality is the previous lower level
+                    
+                    // determine the next segment's bittrate
+                    if (buffer_level <= bba_stats.rS){
+                      m_selectedQualityIndex = 0;
+                    }
+                    else if (buffer_level >= (bba_stats.rS + bba_stats.cuS)){
+                      m_selectedQualityIndex = N_REP-1;
+                    }
+                    else if (f_buff_value >= seg_bitrates[m_quality_plus]){
+                      for (int i = N_REP-1; i >= 0; i--){
+                        if (seg_bitrates < f_buff_value){
+                          m_selectedQualityIndex = i;
+                          break;
+                        }
+                      }
+                    }
+                    else if (f_buff_value <= seg_bitrates[m_quality_subtract]){
+                      for (int i = 0; i < N_REP; i++){
+                        if (seg_bitrates[i] > f_buff_value){
+                          m_selectedQualityIndex = i;
+                          break;
+                        }
+                      }
+                    }
+                    else {
+                      m_selectedQualityIndex = seg_chosen_q[qualities_ind];
+                    }
+
+                    printf("===================== BBA-0 ==================");
+                    printf(" Selected bitrate: %u\n", m_selectedQualityIndex);
+                    
+                    // printf("Sleep for %d s\n", (unsigned int) s_stats.delta);
+                    // sleep((unsigned int) s_stats.delta); // Sleep for x seconds until the buffer level allow new segments download
+                    
+                    ++client_ctx->hcc_still_segments;
+                    struct path_elem *pe;
+                    pe = calloc(1, sizeof(*pe));
+                    unsigned next_seg_q_ind = m_selectedQualityIndex; // Gather segment chosen quality
+                    pe->path = seg_paths[next_seg_q_ind]; /* Path of the next requested segment */
+                    pe->seg_ind = seg_ind;
+                    pe->seg_q = next_seg_q_ind;
+                    printf("Downloading seg. %d, rep. %d, path: '%s'\n", seg_ind, next_seg_q_ind, pe->path);
+                    TAILQ_INSERT_TAIL(&client_ctx->hcc_path_elems, pe, next_pe);
+                    seg_chosen_q[++qualities_ind] = next_seg_q_ind;
+                    conn_h->ch_n_reqs = MIN(client_ctx->hcc_total_n_reqs,
+                                                            client_ctx->hcc_reqs_per_conn);
+                    client_ctx->hcc_total_n_reqs -= conn_h->ch_n_reqs;
+                }
 			} else { // Transmit only new segment with lowest resolution
 				++client_ctx->hcc_still_segments;
 				struct path_elem *pe;
