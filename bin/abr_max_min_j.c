@@ -7,7 +7,7 @@
 
 /* This example formulates and solves the following simple MIP model:
 
-    maximize    j* -> Min(j_{i}) for every segment i
+    maximize    j* + sum_(j) (a_{ij} * j) -> [j* = Min(j_{i})], for every segment i
     subject to  sum_(j) (a_{ij}) = 1 for every segment i
 	            seg_dur x bitrates[i] - available_times[i] * Ti <= 0 for every segment i
 				sum_(i) (Ti) <= bandwidth
@@ -18,7 +18,7 @@
 
 int
 getMaxMinJCoefficients(unsigned n_rep, unsigned n_seg, unsigned n_par, unsigned seg_dur, double bandwidth, 
-					const int* bitrates, double* available_times, unsigned* min_q, double* sol) {
+					const int* bitrates, double* available_times, unsigned* min_q, double* sol, bool isMultiStream) {
     GRBenv * env = NULL;
     GRBmodel * model = NULL;
     int error = 0;
@@ -112,14 +112,45 @@ getMaxMinJCoefficients(unsigned n_rep, unsigned n_seg, unsigned n_par, unsigned 
     if (error) goto QUIT;
 	
 	temp_ind = 0;
-	/* Indicator constraints: for every i -> if a_{ij} == 1 with j = j_old -> Ti = 0.0 */
-    for (size_t i = 0; i < n_seg; i++) {
+	/* Indicator constraints: for every i -> if a_{ij} == 1 with j = j_old (for every i except the last one -> Quality 0 can be selected and needs to be downloaded) -> Ti = 0.0 */
+    for (size_t i = 0; i < n_seg - 1; i++) {
 		ind[0] = n_par - n_seg - 1 + i;
 		val[0] = 1.0;
         error = GRBaddgenconstrIndicator(model, NULL, temp_ind, 1, 1, ind, val, GRB_EQUAL, 0.0);
 		if (error) goto QUIT;
 		temp_ind += n_rep - min_q[i];
     }
+	
+	/* Throughput constraints if multiStream is selected -> every T (if T != 0) has to be equal because of the bandiwdth splitting across streams */
+	if (isMultiStream){
+		temp_ind = 0;
+		/* Indicator constraints: for every i -> if a_{ij} == 0 with j = j_old -> (T{i} - T{i+1} >= 0.0 for every i except last one) */
+		size_t i = 0;
+		for (i = 0; i < n_seg - 1; i++) {
+			for (size_t j = 0; j < n_seg; j++) {
+				if (i == j)
+					continue;
+				ind[0] = n_par - n_seg - 1 + i;
+				val[0] = 1.0;
+				ind[1] = n_par - n_seg - 1 + j;
+				val[1] = -1.0;
+				error = GRBaddgenconstrIndicator(model, NULL, temp_ind, 0, 2, ind, val, GRB_GREATER_EQUAL, 0.0);
+				if (error) goto QUIT;
+			}
+			temp_ind += n_rep - min_q[i];
+		}
+		for (size_t j = 0; j < n_seg - 1; j++) {
+				// if (i == j)
+					// continue;
+				ind[0] = n_par - n_seg - 1 + i;
+				val[0] = 1.0;
+				ind[1] = n_par - n_seg - 1 + j;
+				val[1] = -1.0;
+				error = GRBaddconstr(model, 2, ind, val, GRB_GREATER_EQUAL, 0.0, NULL); // This condition has to be valid always -> Not constrained to any value of a{ij}
+				if (error) goto QUIT;
+			}
+		
+	}
 
 	temp_ind = 0;
 	/* Fourth constraints group: for every i and possible j -> (a_{ij}*j* - a_{ij}*j) <= 0 */
