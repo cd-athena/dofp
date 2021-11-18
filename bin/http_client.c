@@ -1506,7 +1506,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 			w_stats.re_data += st_h->sh_nread / 1000;
 			if (!st_h->isTerminated) {
 				printf("Re-Transmitted segment from path: %s\n", st_h->path);
-				if(isRetSegAcceptable(client_ctx)){
+				if(isRetSegAcceptable(st_h)){
 					printf("Segment acceptable!\n");
 					printf("Quality changed from q = %i", seg_chosen_q[st_h->seg_ind - 1]);
 					seg_chosen_q[st_h->seg_ind - 1] = (int) st_h->seg_q;
@@ -1978,8 +1978,11 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 							// first_quality = seg_chosen_q[rep_seg_ind - 1] + 1;
 							// start_group = 0;
 						// }
+						
+						unsigned start_search = 0U;
+						find_groups:
 						// Check groups and conditions
-						for (unsigned i = 0; i < seg_ind - rep_seg_ind - 2; i++) {
+						for (unsigned i = start_search; i < seg_ind - rep_seg_ind - 2; i++) {
 							printf("\n q[i]: %u - q[i+1]: %u", quality_levels[i], quality_levels[i+1]);
 							if (start_group != -1 && end_group != -1)
 								break;
@@ -2055,6 +2058,15 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 										}
 									}
 								}
+							}
+							
+							// Check next group if ret_segments is 0 and other groups are available
+							if (ret_segments == 0 && end_group < seg_ind - rep_seg_ind - 2) {
+								first_quality = quality_levels[end_group];
+								start_search = end_group + 1;
+								start_group = -1;
+								end_group = -1;
+								goto find_groups;
 							}
 							//printf("\nTEST SEG. FALT 4\n");
 							
