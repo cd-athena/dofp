@@ -42,19 +42,18 @@ getMaxMinJNormCoefficients(unsigned n_rep, unsigned n_seg, unsigned n_par, unsig
     if (error) goto QUIT;
 
     /* Create an empty model */
-    error = GRBnewmodel(env, & model, "maxminJ", 0, NULL, NULL, NULL, NULL, NULL);
+    error = GRBnewmodel(env, & model, "maxminJNorm", 0, NULL, NULL, NULL, NULL, NULL);
     if (error) goto QUIT;
 	
 	double normal_factor = 0.0;
 	for (size_t i = 0; i < n_seg; i++) {
-		normal_factor += pow((double) n_rep, (double) i + 2);
+		normal_factor += pow((double) n_rep-1, (double) i + 2);
 	}	
 	
 	/* Add variables */
     for (size_t i = 0; i < n_seg; i++) {
         for (size_t j = min_q[i]; j < n_rep; j++) {
-            obj[temp_ind] = alpha * (j % n_rep) * pow((double) n_rep, (double) i + 1) / normal_factor - beta * (bitrates[j] * seg_dur / bandwidth) / buffer_size;
-			//obj[temp_ind] = alpha * (j % n_rep) * pow((double) n_rep, (double) i + 1) / normal_factor;
+            obj[temp_ind] = alpha * (j % n_rep) * pow((double) n_rep-1, (double) i + 1) / normal_factor;
 			vtype[temp_ind] = GRB_BINARY; // a_{ij}
 			temp_ind++;
         }
@@ -64,14 +63,14 @@ getMaxMinJNormCoefficients(unsigned n_rep, unsigned n_seg, unsigned n_par, unsig
         vtype[temp_ind] = GRB_INTEGER; // Throughputs
 		temp_ind++;
     }
-	obj[n_par - 1] = alpha * 1.0 / n_rep;
+	obj[n_par - 1] = beta / (n_rep-1);
 	vtype[n_par - 1] = GRB_INTEGER; // j*
 
     error = GRBaddvars(model, n_par, 0, NULL, NULL, NULL, obj, NULL, NULL, vtype,
         NULL);
     if (error) goto QUIT;
 	
-	error = GRBsetdblattr(model, GRB_DBL_ATTR_OBJCON, beta * (buffer_level + seg_dur) / buffer_size);
+	// error = GRBsetdblattr(model, GRB_DBL_ATTR_OBJCON, beta * (buffer_level + seg_dur) / buffer_size);
 
     /* Change objective sense to maximization */
     error = GRBsetintattr(model, GRB_INT_ATTR_MODELSENSE, GRB_MAXIMIZE);

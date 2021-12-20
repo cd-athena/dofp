@@ -3,8 +3,6 @@ tc qdisc del dev ens33 root
 
 tc qdisc add dev ens33 root tbf rate 2247kbit latency 20ms burst 1540
 sleep 0.0s
-tc qdisc change dev ens33 root tbf rate 2247kbit latency 20ms burst 1540
-sleep 0.0s
 tc qdisc change dev ens33 root tbf rate 2442kbit latency 20ms burst 1540
 sleep 2.0s
 tc qdisc change dev ens33 root tbf rate 2494kbit latency 20ms burst 1540

@@ -392,7 +392,6 @@ struct index_html_ctx
     struct resp resp;
 };
 
-
 struct ver_head_ctx
 {
     struct resp resp;
@@ -441,6 +440,14 @@ struct interop_push_path
     char                                path[0];
 };
 
+struct media_ctx
+{
+    char        *seg_path;
+	STAILQ_HEAD(, interop_push_path)    push_paths;
+	long        file_size;
+    size_t      remain;
+    unsigned    file_off;
+};
 
 struct gen_file_ctx
 {
@@ -470,6 +477,7 @@ struct lsquic_stream_ctx {
     enum interop_handler {
         IOH_ERROR,
         IOH_INDEX_HTML,
+		IOH_MEDIA,
         IOH_MD5SUM,
         IOH_VER_HEAD,
         IOH_GEN_FILE,
@@ -479,6 +487,7 @@ struct lsquic_stream_ctx {
     const char          *resp_status;
     union {
         struct index_html_ctx   ihc;
+		struct media_ctx        mc;
         struct ver_head_ctx     vhc;
         struct md5sum_ctx       md5c;
         struct gen_file_ctx     gfc;
@@ -518,16 +527,24 @@ ends_with (const char *filename, const char *ext)
 static const char *
 select_content_type (lsquic_stream_ctx_t *st_h)
 {
-    if (     ends_with(st_h->req_filename, ".html"))
+    if (ends_with(st_h->interop_u.mc.seg_path, ".html") || ends_with(st_h->interop_u.mc.seg_path, "/"))
         return "text/html";
-    else if (ends_with(st_h->req_filename, ".png"))
+    else if (ends_with(st_h->interop_u.mc.seg_path, ".png"))
         return "image/png";
-    else if (ends_with(st_h->req_filename, ".css"))
+    else if (ends_with(st_h->interop_u.mc.seg_path, ".css"))
         return "text/css";
-    else if (ends_with(st_h->req_filename, ".gif"))
+    else if (ends_with(st_h->interop_u.mc.seg_path, ".gif"))
         return "image/gif";
-    else if (ends_with(st_h->req_filename, ".txt"))
+    else if (ends_with(st_h->interop_u.mc.seg_path, ".txt"))
         return "text/plain";
+	else if (ends_with(st_h->interop_u.mc.seg_path, ".mp4"))
+        return "video/mp4";
+	else if (ends_with(st_h->interop_u.mc.seg_path, ".m4s"))
+        return "video/iso.segment";
+	else if (ends_with(st_h->interop_u.mc.seg_path, ".mp3"))
+        return "audio/x-mpeg-3";
+	else if (ends_with(st_h->interop_u.mc.seg_path, ".mpeg"))
+        return "audio/mpeg";
     else
         return "application/octet-stream";
 }
@@ -1208,6 +1225,8 @@ static struct req_map req_maps[] =
 {
     { .method = GET, .path = "/", .handler = IOH_INDEX_HTML, .status = "200", .flags = 0, },
     { .method = GET, .path = "/index.html", .handler = IOH_INDEX_HTML, .status = "200", .flags = 0, },
+	{ .method = GET, .path = "media[0-9]+.txt", .handler = IOH_MEDIA, .status = "200", .flags = RM_REGEX, }, // MEDIA TRANSFER REQUEST
+	{ .method = GET, .path = ".*\.m4s", .handler = IOH_MEDIA, .status = "200", .flags = RM_REGEX, }, // MEDIA TRANSFER REQUEST
     { .method = POST, .path = "/cgi-bin/md5sum.cgi", .handler = IOH_MD5SUM, .status = "200", .flags = RM_WANTBODY, },
     { .method = POST, .path = "/cgi-bin/verify-headers.cgi", .handler = IOH_VER_HEAD, .status = "200", .flags = RM_WANTBODY, },
     { .method = GET, .path = "^/([0-9][0-9]*)([KMG]?)$", .handler = IOH_GEN_FILE, .status = "200", .flags = RM_REGEX, },
@@ -1343,6 +1362,8 @@ http_server_interop_on_read (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
     unsigned char md5sum[MD5_DIGEST_LENGTH];
     char md5str[ sizeof(md5sum) * 2 + 1 ];
     char byte[1];
+	int fd = 0;
+	struct stat st;
 
     if (!(st_h->flags & SH_HEADERS_READ))
     {
@@ -1368,6 +1389,25 @@ http_server_interop_on_read (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
             {
             case IOH_INDEX_HTML:
                 st_h->interop_u.ihc.resp = (struct resp) { INDEX_HTML, sizeof(INDEX_HTML) - 1, 0, };
+                break;
+			case IOH_MEDIA:
+				// IMPLEMENT STAIL_Q push_paths for re-transmissions
+				STAILQ_INIT(&st_h->interop_u.mc.push_paths);
+				st_h->interop_u.mc.seg_path = st_h->req->path;
+				fd = open(st_h->req->path, O_RDONLY);
+				fstat(fd, &st);
+				st_h->interop_u.mc.remain = st.st_size;
+				st_h->interop_u.mc.file_size = st.st_size;
+				st_h->interop_u.mc.file_off = 0;
+				/*
+				len = matches[i].rm_eo - matches[i].rm_so;
+                        push_path = malloc(sizeof(*push_path) + len + 1);
+                        memcpy(push_path->path, st_h->req->path
+                            + matches[i].rm_so, len);
+                        push_path->path[len] ='\0';
+                        STAILQ_INSERT_TAIL(&st_h->interop_u.gfc.push_paths,
+                                                                push_path, next);
+				*/
                 break;
             case IOH_VER_HEAD:
                 st_h->interop_u.vhc.resp = (struct resp) {
@@ -1520,15 +1560,18 @@ send_headers2 (struct lsquic_stream *stream, struct lsquic_stream_ctx *st_h,
                     size_t content_len)
 {
     char clbuf[0x20];
-    struct header_buf hbuf;
+	const char *content_type;
 
+    struct header_buf hbuf;
     snprintf(clbuf, sizeof(clbuf), "%zd", content_len);
+	
+	content_type = select_content_type(st_h);
 
     hbuf.off = 0;
     struct lsxpack_header  headers_arr[4];
     header_set_ptr(&headers_arr[0], &hbuf, V(":status"), V(st_h->resp_status));
     header_set_ptr(&headers_arr[1], &hbuf, V("server"), V(LITESPEED_ID));
-    header_set_ptr(&headers_arr[2], &hbuf, V("content-type"), V("text/html"));
+    header_set_ptr(&headers_arr[2], &hbuf, V("content-type"), V(content_type));
     header_set_ptr(&headers_arr[3], &hbuf, V("content-length"), V(clbuf));
     lsquic_http_headers_t headers = {
         .count = sizeof(headers_arr) / sizeof(headers_arr[0]),
@@ -1564,6 +1607,32 @@ idle_read (void *lsqr_ctx, void *buf, size_t count)
     return p - (unsigned char *) buf;
 }
 
+static size_t
+media_read (void *lsqr_ctx, void *buf, size_t count)
+{
+    struct media_ctx *const mc = lsqr_ctx;
+    unsigned char *p = buf;
+    unsigned char *const end = p + count;
+    size_t towrite;
+	FILE *media;
+	media = fopen(mc->seg_path,"rb");  // media = fopen("test.bin","rb"); r for read, b for binary
+    while (p < end && mc->remain > 0)
+    {
+        towrite = MIN((unsigned) (end - p), mc->file_size - mc->file_off);
+        if (towrite > mc->remain)
+            towrite = mc->remain;
+        fread(p, towrite, 1, media); // memcpy(p, on_being_idle + mc->file_off, towrite);
+        mc->file_off += towrite;
+        if (mc->file_off == mc->file_size)
+            mc->file_off = 0;
+        p += towrite;
+        mc->remain -= towrite;
+    }
+	fclose(media);
+
+    return p - (unsigned char *) buf;
+}
+
 
 static size_t
 idle_size (void *lsqr_ctx)
@@ -1571,6 +1640,14 @@ idle_size (void *lsqr_ctx)
     struct gen_file_ctx *const gfc = lsqr_ctx;
 
     return gfc->remain;
+}
+
+static size_t
+media_size (void *lsqr_ctx)
+{
+    struct media_ctx *const mc = lsqr_ctx;
+
+    return mc->remain;
 }
 
 
@@ -1692,6 +1769,81 @@ idle_on_write (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
     }
 }
 
+static void
+media_on_write (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
+{
+    struct media_ctx *const mc = &st_h->interop_u.mc;
+	struct interop_push_path *push_path;
+    struct lsxpack_header header_arr[4];
+    struct lsquic_http_headers headers;
+    struct req *req;
+    ssize_t nw;
+    struct header_buf hbuf;
+    struct lsquic_reader reader;
+
+    if (st_h->flags & SH_HEADERS_SENT)
+    {
+        if (s_pwritev)
+        {
+            nw = lsquic_stream_pwritev(stream, my_interop_preadv, mc,
+                                                            mc->remain);
+            if (nw == 0)
+                goto with_reader;
+        }
+        else
+        {
+  with_reader:
+            reader.lsqr_read = media_read,
+            reader.lsqr_size = media_size,
+            reader.lsqr_ctx = mc,
+            nw = lsquic_stream_writef(stream, &reader);
+        }
+        if (nw < 0)
+        {
+            LSQ_ERROR("error writing idle thoughts: %s", strerror(errno));
+            exit(1);
+        }
+        if (mc->remain == 0)
+            lsquic_stream_shutdown(stream, 1);
+    }
+    else
+    {
+        if (st_h->req->authority_str)
+            while ((push_path = STAILQ_FIRST(&mc->push_paths)))
+            {
+                STAILQ_REMOVE_HEAD(&mc->push_paths, next);
+                LSQ_DEBUG("pushing promise for %s", push_path->path);
+                hbuf.off = 0;
+                header_set_ptr(&header_arr[0], &hbuf, V(":method"), V("GET"));
+                header_set_ptr(&header_arr[1], &hbuf, V(":path"), V(push_path->path));
+                header_set_ptr(&header_arr[2], &hbuf, V(":authority"), V(st_h->req->authority_str));
+                header_set_ptr(&header_arr[3], &hbuf, V(":scheme"), V("https"));
+                headers.headers = header_arr;
+                headers.count = sizeof(header_arr) / sizeof(header_arr[0]);
+                req = new_req(GET, push_path->path, st_h->req->authority_str);
+                if (req)
+                {
+                    if (0 != lsquic_conn_push_stream(lsquic_stream_conn(stream),
+                                                            req, stream, &headers))
+                    {
+                        LSQ_WARN("stream push failed");
+                        interop_server_hset_destroy(req);
+                    }
+                }
+                else
+                    LSQ_WARN("cannot allocate req for push");
+                free(push_path);
+            }
+        if (0 == send_headers2(stream, st_h, mc->remain))
+            st_h->flags |= SH_HEADERS_SENT;
+        else
+        {
+            LSQ_ERROR("cannot send headers: %s", strerror(errno));
+            lsquic_stream_close(stream);
+        }
+    }
+}
+
 
 static void
 http_server_interop_on_write (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
@@ -1707,6 +1859,9 @@ http_server_interop_on_write (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h
     case IOH_INDEX_HTML:
         resp = &st_h->interop_u.ihc.resp;
         goto reply;
+	case IOH_MEDIA:
+        media_on_write(stream, st_h);
+		return;
     case IOH_VER_HEAD:
         resp = &st_h->interop_u.vhc.resp;
         goto reply;
@@ -2057,3 +2212,4 @@ main (int argc, char **argv)
 
     exit(0 == s ? EXIT_SUCCESS : EXIT_FAILURE);
 }
+
