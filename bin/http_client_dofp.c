@@ -1477,7 +1477,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 				if (seg_ind <= N_MAX_SEG) {
 					for (size_t i = 0; i < N_REP; i++){
 						// Update paths
-						int up_len = strlen(FP_PATH) + 4 + strlen(SP_PATH) + strlen(EXT) + 3; // 4 is the max. number of bitrate ciphers, 3 is the max. segment index (1,..,999)"
+						int up_len = strlen(FP_PATH) + 6 + strlen(SP_PATH) + strlen(EXT) + 6; // 6 is the max. number of bitrate ciphers, 6 is the max. segment index (1,..,999999)"
 						char* temp_pp = (char*)malloc((up_len+1)*sizeof(char));
 						snprintf(temp_pp, (up_len+1)*sizeof(char), "%s%d%s%d%s", FP_PATH, seg_bitrates[i], SP_PATH, seg_ind, EXT);
 						printf("Updated path %d: %s\n", (int) i, temp_pp);
