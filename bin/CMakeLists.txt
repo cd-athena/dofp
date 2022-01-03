@@ -23,6 +23,7 @@ ENDIF()
 IF(MSVC)
     SET(GETOPT_C ../wincompat/getopt.c)
 ENDIF()
+add_executable(http_server_dofp http_server_dofp.c prog.c test_common.c test_cert.c ${GETOPT_C})
 add_executable(http_server http_server.c prog.c test_common.c test_cert.c ${GETOPT_C})
 IF(NOT MSVC)   #   TODO: port MD5 server and client to Windows
 add_executable(md5_server md5_server.c prog.c test_common.c test_cert.c ${GETOPT_C})
@@ -38,11 +39,19 @@ add_executable(perf_server perf_server.c prog.c test_common.c test_cert.c ${GETO
 
 IF (NOT MSVC)
 
-add_executable(http_client
-    http_client.c
+add_executable(http_client_priority
+    http_client_priority.c
+    prog.c
+    test_common.c
+    test_cert.c
+)
+
+add_executable(http_client_dofp
+    http_client_dofp.c
     abr_max_j.c
-	abr_max_min_j.c
-	abr_max_min_j_norm.c
+    abr_max_min_j.c
+    abr_max_min_j_norm.c
+    abr_quality_instability.c
     prog.c
     test_common.c
     test_cert.c
@@ -51,12 +60,21 @@ add_executable(http_client
 #MSVC
 ELSE()
 
-add_executable(http_client
-    http_client.c
+add_executable(http_client_priority
+    http_client_priority.c
+    prog.c
+    test_common.c
+    test_cert.c
+    ../wincompat/getopt.c
+    ../wincompat/getopt1.c
+)
+
+add_executable(http_client_dofp
+    http_client_dofp.c
     abr_max_j.c
-	abr_max_min_j.c
-	abr_max_min_j_norm.c
-	abr_max_j_q.c
+    abr_max_min_j.c
+    abr_max_min_j_norm.c
+    abr_quality_instability.c
     prog.c
     test_common.c
     test_cert.c
@@ -66,7 +84,9 @@ add_executable(http_client
 
 ENDIF()
 
-TARGET_LINK_LIBRARIES(http_client ${LIBS})
+TARGET_LINK_LIBRARIES(http_client_dofp ${LIBS})
+TARGET_LINK_LIBRARIES(http_client_priority ${LIBS})
+TARGET_LINK_LIBRARIES(http_server_dofp ${LIBS})
 TARGET_LINK_LIBRARIES(http_server ${LIBS})
 IF(NOT MSVC)
 TARGET_LINK_LIBRARIES(md5_server  ${LIBS})
