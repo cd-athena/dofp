@@ -48,6 +48,7 @@
 #include "abr_max_j.h"
 #include "abr_max_min_j.h"
 #include "abr_max_min_j_norm.h"
+#include "abr_quality_instability.h"
 
 #include "../src/liblsquic/lsquic_logger.h"
 #include "../src/liblsquic/lsquic_int_types.h"
@@ -512,7 +513,7 @@ struct http_client_ctx {
 	unsigned                     hcc_open_streams;
 	unsigned                     hcc_still_ret_segments; // Segments missing to be re-transmitted from current re-transmission window
 	
-	unsigned                     chosen_abr; // {1 -> MaxJ; 2 -> MaxMinJ (MaxJ*); 3 -> MaxMinJ_Buff_Norm; 4 -> MaxR select; 5 -> BOLA; 6 -> SARA; 7 -> BBA}
+	unsigned                     chosen_abr; // {0 -> Normalized_Quality_Instability; 1 -> MaxJ; 2 -> MaxMinJ (MaxJ*); 3 -> MaxMinJ_Buff_Norm; 4 -> MaxR select; 5 -> BOLA; 6 -> SARA; 7 -> BBA}
 	bool 						 h2br; // If H2BR module is implemented
     unsigned                     hcc_total_n_reqs;
     unsigned                     hcc_reqs_per_conn;
@@ -1255,7 +1256,7 @@ http_client_on_read (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 			// printf("Init: %ld; End: %ld\n", st_h->sh_created, end);
 			// printf("Difference: %ld\n", end - st_h->sh_created);
 			update_buff(false);
-			if (st_h->seg_q > 0 && (client_ctx->chosen_abr == 2 || client_ctx->chosen_abr == 3)				&& st_h->isRet) {
+			if (st_h->seg_q > 0 && (client_ctx->chosen_abr == 0 || client_ctx->chosen_abr == 2 || client_ctx->chosen_abr == 3)				&& st_h->isRet) {
 				/* ADD Throughput computation and CANCEL FEATURE */
 				st_h->sh_throughput = (long double) st_h->sh_nread * 8 / ((long double) 1000 * (end - st_h->sh_created) / 1000000); // [kbps]
 				// printf("Passed seconds: %Lf\n", (long double) (end - st_h->sh_created) / 1000000);
@@ -1477,7 +1478,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 				if (seg_ind <= N_MAX_SEG) {
 					for (size_t i = 0; i < N_REP; i++){
 						// Update paths
-						int up_len = strlen(FP_PATH) + 4 + strlen(SP_PATH) + strlen(EXT) + 3; // 4 is the max. number of bitrate ciphers, 3 is the max. segment index (1,..,999)"
+						int up_len = strlen(FP_PATH) + 6 + strlen(SP_PATH) + strlen(EXT) + 6; // 6 is the max. number of bitrate ciphers, 6 is the max. segment index (1,..,999999)"
 						char* temp_pp = (char*)malloc((up_len+1)*sizeof(char));
 						snprintf(temp_pp, (up_len+1)*sizeof(char), "%s%d%s%d%s", FP_PATH, seg_bitrates[i], SP_PATH, seg_ind, EXT);
 						printf("Updated path %d: %s\n", (int) i, temp_pp);
@@ -1577,9 +1578,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					for (size_t i = 0; i < group_n; i++){
 						n_par += N_REP - min_q[i];
 					}
-					if (client_ctx->chosen_abr == 2)
-						n_par++; // j*
-					else if (client_ctx->chosen_abr == 3)
+					if (client_ctx->chosen_abr != 1)
 						n_par++; // j*
 					
 					double available_times[group_n];
@@ -1615,7 +1614,9 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						isMultiStream = true;
 					
 					// ABR SELECTION
-					if (client_ctx->chosen_abr == 1)
+					if (client_ctx->chosen_abr == 0)
+						error = getMaxQINormCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.tot_throughput, seg_bitrates, available_times, min_q, sol, isMultiStream, alpha, beta);
+					else if (client_ctx->chosen_abr == 1)
 						error = getMaxJCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.tot_throughput, seg_bitrates, available_times, min_q, sol);
 					else if (client_ctx->chosen_abr == 2)
 						error = getMaxMinJCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.tot_throughput, seg_bitrates, available_times, min_q, sol, isMultiStream);
@@ -1647,7 +1648,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 								chosen_q[i] = (int) j;
 							temp_ind++;
 						}
-						if (client_ctx->chosen_abr == 2 || client_ctx->chosen_abr == 3)
+						if (client_ctx->chosen_abr != 1)
 							chosen_T[i] = sol[n_par - group_n - 1 + i];
 						else
 							chosen_T[i] = sol[n_par - group_n + i];
@@ -1657,7 +1658,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					for (size_t i = 0; i < group_n; i++)
 						printf("Segment %lu: Quality -> %i; Throughput -> %.0f\n", i + start_seg_ind + 1, chosen_q[i], chosen_T[i]);
 					// Print J* [and Q*]
-					if (client_ctx->chosen_abr == 2 || client_ctx->chosen_abr == 3)
+					if (client_ctx->chosen_abr != 1)
 						printf("J* -> %.0f\n", sol[n_par - 1]);
 					
 					if (seg_ind <= N_MAX_SEG) { // NEW SEGMENTS TO DOWNLOAD
@@ -3225,7 +3226,7 @@ main (int argc, char **argv)
 	fprintf(fp, "\n");
 	for (size_t i = 0; i < N_MAX_SEG; i++) {
 		fprintf(fp, "%.2Lf,%i,%.3f,%i,%.3f,%.3f", t_stats.e_throughput[i], seg_bitrates[seg_chosen_q[i]], t_stats.b_level[i], seg_chosen_q[i], stalls_t[i], stalls_d[i]);
-		if (i == 0 && client_ctx.chosen_abr < 4)
+		if ((i == 0 && client_ctx.chosen_abr < 4) || client_ctx.h2br)
 			fprintf(fp, ",%.3Lf,%u,%.3Lf,%u", w_stats.re_data, w_stats.re_count, w_stats.re_unused_data, w_stats.re_unused_count);
 		fprintf(fp, "\n");
 	}
