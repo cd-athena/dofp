@@ -1,6 +1,6 @@
 /* ABR Normalized Quality Instability optimization algorithm
  * 
- * Author: Daniele Lorenzi, Minh Nguyen, Farzad
+ * Author: Daniele Lorenzi, Minh Nguyen, Farzad Tashtarian
  * Email:  lorenzi.daniele97@gmail.com
  * Year:   2021
  */
