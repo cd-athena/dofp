@@ -17,6 +17,13 @@ They Look Ahead, We Look Back!
 	- Ready to be used!
 3. Make the .c files and run the experiments:
 	- Run the "cmake ." command followed by the "make" one right before the "bin/" directory of LSQUIC (This should create the executable files in "bin/");
+	BEFORE it: use CMakeList.txt of Daniele
+	export GUROBI_HOME="/opt/gurobi901/linux64"
+	export PATH="${PATH}:${GUROBI_HOME}/bin"
+	export LD_LIBRARY_PATH="${GUROBI_HOME}/lib"
+	export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"
+
+
 	- Open two linux shells (three if we want to run the "tc" tool or a bandiwdth control script) or connect two real or virtual machine to run the experiment;
 	- On both machines change directory to the working directory by running "cd boringssl/lsquic/";
 	- On the first server's shell run "sudo ./bin/A_2018_01_26_11_26_26_good_4M.sh" for running the bandwidth control script;
