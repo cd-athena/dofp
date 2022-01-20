@@ -20,6 +20,11 @@ int
 getMaxQINormCoefficients(unsigned n_rep, unsigned n_seg, unsigned n_par, unsigned seg_dur, double bandwidth, 
 					const int* bitrates, double* available_times, unsigned* min_q, double* sol, bool isMultiStream, double alpha, double beta) {
     
+	seg_dur = 4U;
+	printf("\nNrep: %u, n_seg: %u, n_par: %u, seg_dur: %u, bandwidth: %.3f, alpha: %.1f, beta: %.1f\n", n_rep, n_seg, n_par, seg_dur, bandwidth, alpha, beta);
+	for(unsigned i = 0; i < n_seg; i++){
+		printf("min_q[%d]:%u\n", i, min_q[i]);
+	}
 	int plus_par = 0;
 	/* Loop to scout the number of a_{ij} variables -> need it for the abs constraint (instability computation) */
 	for (size_t i = 1; i < n_seg; i++) {
@@ -114,16 +119,19 @@ getMaxQINormCoefficients(unsigned n_rep, unsigned n_seg, unsigned n_par, unsigne
 		n_val = 0;
         for (size_t j = min_q[i]; j < n_rep; j++) {
             ind[n_val] = temp_ind;
-            val[n_val] = seg_dur * bitrates[j];
+            val[n_val] = 1.0 * seg_dur * bitrates[j];
 			n_val++;
 			temp_ind++;
+			printf("Bitrate (quality %d): %d;segment duration: %u\n", j, bitrates[j], seg_dur);
+			printf("Bitrate*Segment_duration (quality %d): %d\n", j, bitrates[j] * seg_dur);
         }
         ind[n_val] = n_par - n_seg - 1 + i; // this index value is the throughput Ti
-        val[n_val] = - available_times[i];
+        val[n_val] = - 1.0 * available_times[i];
 		if (n_val > 0){
 			error = GRBaddgenconstrIndicator(model, NULL, temp_ind - (n_rep - min_q[i]), 0, n_val + 1, ind, val, GRB_LESS_EQUAL, 0.0); // If j_new != j_old add the constraint on that segment download time
 			if (error) goto QUIT;
 		}
+		printf("Available time (s. %d): %.3f s\n", i, available_times[i]);
     }
 
     /* Third constraint: sum(Throughput) <= Bandwidth */
@@ -190,36 +198,36 @@ getMaxQINormCoefficients(unsigned n_rep, unsigned n_seg, unsigned n_par, unsigne
         }
     }
 	
-	temp_ind = 0;
-	int j_ind = 0;
-    /* Fifth constraints group: for every i, j and k: a_{i+1,j} * (k) - a_{i,j} * j = auxiliary_variable -> Used for instability value */
-	/* Implemented as: a_{i+1,k} * a_{i,j} * (k - j) = auxiliary_variable */
-	// Order: i -> i+1 (e.g. (2,3),(1,2,3) -> (2,1),(2,2), (2,3) ... , (3,1), (3,2), (3,3))
-    for (size_t i = 0; i < n_seg - 1; i++) {
-		int kk_ind = j_ind + (n_rep - min_q[i]); // Needed for reinitializing the k_ind
-        for (int j = min_q[i]; j < n_rep; j++) {
-			int k_ind = kk_ind;
-			for (int k = min_q[i+1]; k < n_rep; k++) {
-				qrow[0] = j_ind; // a_{i,j} index
-				qcol[0] = k_ind; // a_{i+1,k} index
-				qval[0] = k - j;
-				ind[0] = n_par + temp_ind;
-				val[0] = -1.0;
-				// ADD CONSTR
-				error = GRBaddqconstr(model, 1, ind, val, 1, qrow, qcol, qval, GRB_EQUAL, 0.0, NULL);
-				if (error) goto QUIT;
-				temp_ind++;
-				k_ind++;
-			}
-        j_ind++;
-		}
-    }
+	// temp_ind = 0;
+	// int j_ind = 0;
+    // /* Fifth constraints group: for every i, j and k: a_{i+1,j} * (k) - a_{i,j} * j = auxiliary_variable -> Used for instability value */
+	// /* Implemented as: a_{i+1,k} * a_{i,j} * (k - j) = auxiliary_variable */
+	// // Order: i -> i+1 (e.g. (2,3),(1,2,3) -> (2,1),(2,2), (2,3) ... , (3,1), (3,2), (3,3))
+    // for (size_t i = 0; i < n_seg - 1; i++) {
+		// int kk_ind = j_ind + (n_rep - min_q[i]); // Needed for reinitializing the k_ind
+        // for (int j = min_q[i]; j < n_rep; j++) {
+			// int k_ind = kk_ind;
+			// for (int k = min_q[i+1]; k < n_rep; k++) {
+				// qrow[0] = j_ind; // a_{i,j} index
+				// qcol[0] = k_ind; // a_{i+1,k} index
+				// qval[0] = k - j;
+				// ind[0] = n_par + temp_ind;
+				// val[0] = -1.0;
+				// // ADD CONSTR
+				// error = GRBaddqconstr(model, 1, ind, val, 1, qrow, qcol, qval, GRB_EQUAL, 0.0, NULL);
+				// if (error) goto QUIT;
+				// temp_ind++;
+				// k_ind++;
+			// }
+        // j_ind++;
+		// }
+    // }
 	
-	/* Sixth constraints group: for every new auxiliary_variable take the absolute value */
-	for (size_t i = n_par; i < n_par + plus_par; i++) {
-		error = GRBaddgenconstrAbs(model, NULL, i + plus_par, i);
-		if (error) goto QUIT;
-	}
+	// /* Sixth constraints group: for every new auxiliary_variable take the absolute value */
+	// for (size_t i = n_par; i < n_par + plus_par; i++) {
+		// error = GRBaddgenconstrAbs(model, NULL, i + plus_par, i);
+		// if (error) goto QUIT;
+	// }
 	
 	error = GRBsetintparam(GRBgetenv(model), "DualReductions", 0);
 	if (error) goto QUIT;

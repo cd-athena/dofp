@@ -3,6 +3,7 @@
  * http_client.c -- A simple HTTP/QUIC client
  */
 
+#include <Python.h>
 #ifndef WIN32
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -203,7 +204,7 @@ static char             *seg_res[N_REP] = {"256x114", "426x190", "640x286", "854
 static int              seg_chosen_q[N_MAX_SEG]; /* Chosen representation quality for each downloaded segment. If -1, the segment has not been yet downloaded */
 // static int              re_seg_chosen_q[N_MAX_SEG]; /* Chosen representation quality for each re-transmitted segment. If -1, the segment has not been re-transmitted */
 static int              qualities_ind = -1; /* Index for values substitution */
-static const double		alpha = .5, beta = .5;
+static const double		alpha = .6, beta = .4;
 static unsigned         rep_seg_ind = 1U;
 static double           rep_seg_time = 4.0; /* Left time for the segment to be fully reproduced (4s -> ... -> 0s) */
 static const char       WEIGHTS_FILENAME[] = "tos1_h264/weights.txt";
@@ -1269,19 +1270,19 @@ http_client_on_read (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					available_time = rep_seg_time + (seg_ind - rep_seg_ind - 1) * seg_length;
 				/* CANCEL_PUSH if available_time is not enough */
 				if (request_cancellation) {
-					printf("\n==! TRANSMISSION STATUS CHECK !==\n");
-					printf("Number of read bytes from stream: %zu\n", st_h->sh_nread);
-					printf("Available time: %.3f\n", available_time);
-					printf("Estimated throughput: %.3Lf\n", st_h->sh_throughput);
-					printf("Re-transmission time: %.3Lf\n", (bitrate * seg_length - (st_h->sh_nread * 8 / 1000)) / st_h->sh_throughput);
+					// printf("\n==! TRANSMISSION STATUS CHECK !==\n");
+					// printf("Number of read bytes from stream: %zu\n", st_h->sh_nread);
+					// printf("Available time: %.3f\n", available_time);
+					// printf("Estimated throughput: %.3Lf\n", st_h->sh_throughput);
+					// printf("Re-transmission time: %.3Lf\n", (bitrate * seg_length - (st_h->sh_nread * 8 / 1000)) / st_h->sh_throughput);
 					// if (available_time < 0.9 * ((bitrate * seg_length - (st_h->sh_nread * 8 / 1000)) / st_h->sh_throughput)) {
 					if (available_time < 0.1) {
-						printf("\n==! TRANSMISSION STATUS CHECK !==\n");
-						printf("Number of read bytes from stream: %zu\n", st_h->sh_nread);
-						printf("Available time: %.3f\n", available_time);
-						printf("Estimated throughput: %.3Lf\n", st_h->sh_throughput);
-						printf("Re-transmission time: %.3Lf\n", (bitrate * seg_length - (st_h->sh_nread * 8 / 1000)) / st_h->sh_throughput);
-						printf("==== NOT ENOUGH THROUGHPUT FOR FULLFILLING REQUEST -> CLOSING STREAM for segment %u ====\n", seg_ind);
+						// printf("\n==! TRANSMISSION STATUS CHECK !==\n");
+						// printf("Number of read bytes from stream: %zu\n", st_h->sh_nread);
+						// printf("Available time: %.3f\n", available_time);
+						// printf("Estimated throughput: %.3Lf\n", st_h->sh_throughput);
+						// printf("Re-transmission time: %.3Lf\n", (bitrate * seg_length - (st_h->sh_nread * 8 / 1000)) / st_h->sh_throughput);
+						// printf("==== NOT ENOUGH THROUGHPUT FOR FULLFILLING REQUEST -> CLOSING STREAM for segment %u ====\n", seg_ind);
 						/* Send CANCEL_PUSH -> If next segment, need to re-download it with different quality */
 						st_h->isTerminated = true;
 						lsquic_stream_close(stream);
@@ -1614,9 +1615,222 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						isMultiStream = true;
 					
 					// ABR SELECTION
-					if (client_ctx->chosen_abr == 0)
-						error = getMaxQINormCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.tot_throughput, seg_bitrates, available_times, min_q, sol, isMultiStream, alpha, beta);
-					else if (client_ctx->chosen_abr == 1)
+					if (client_ctx->chosen_abr == 0) {
+						
+						// We also have L[0] -> The composite sum of all the instability values (quality[i+1] - quality[i])
+						// n_par++;
+						
+						int cmd_argc = 2;
+						char* cmd_argv[] = {"milp", "milp_python"};
+						
+						wchar_t** _argv = PyMem_Malloc(sizeof(wchar_t*)*cmd_argc);
+						for (int i=0; i<cmd_argc; i++) {
+						  wchar_t* arg = Py_DecodeLocale(cmd_argv[i], NULL);
+						  _argv[i] = arg;
+						}
+
+						/* Setup */
+						Py_SetProgramName(_argv[0]);
+						Py_Initialize();
+						PySys_SetArgv(cmd_argc, _argv);
+						
+						/* Add local path */
+						PyObject *sys = PyImport_ImportModule("sys");
+						PyObject *path = PyObject_GetAttrString(sys, "path");
+						
+						/* Run the 'main' module */
+						//int rtn = Py_Main(cmd_argc, _argv); // <-- Notice the command line arguments.
+						// char filename[] = "milp.py";
+						// FILE* fp;
+
+						// fp = _Py_fopen(filename, "r");
+						// PyRun_SimpleFile(fp, filename);
+						
+						PyObject* myModuleString = PyUnicode_FromString(cmd_argv[0]);
+						PyObject* myModule = PyImport_Import(myModuleString);
+						Py_DECREF(myModuleString);
+						
+						PyObject* myFunction;
+						PyObject* args;
+						PyObject* pValue;
+
+						bool error = false;
+						
+						if (myModule != NULL) {
+							myFunction = PyObject_GetAttrString(myModule,cmd_argv[1]);
+							/* pFunc is a new reference */
+
+							if (myFunction && PyCallable_Check(myFunction)) {
+								/*
+								N_REP --> Redundant, 
+								group_n,
+								seg_length, 
+								t_stats.tot_throughput, 
+								seg_bitrates, 
+								available_times, 
+								min_q, 
+								sol --> This will be returned by Python, 
+								isMultiStream, 
+								alpha, 
+								beta
+								*/
+								int arg_index = 0;
+								args = PyTuple_New(9);
+								/** Total number of elements in the bitrate ladder */
+								// pValue = PyLong_FromUnsignedLong((unsigned long) N_REP);
+								// PyTuple_SetItem(args, arg_index, pValue);
+								// arg_index++;
+								// if (!pValue) {
+									// error = true;
+									// goto error_check;
+								// }
+								/** Number of total segments in the buffer + next segment */
+								pValue = PyLong_FromUnsignedLong((unsigned long) group_n);
+								PyTuple_SetItem(args, arg_index, pValue);
+								arg_index++;
+								if (!pValue) {
+									error = true;
+									goto error_check;
+								}
+								/** Number of total parameters */
+								// pValue = PyLong_FromUnsignedLong((unsigned long) n_par);
+								// PyTuple_SetItem(args, arg_index, pValue);
+								// arg_index++;
+								// if (!pValue) {
+									// error = true;
+									// goto error_check;
+								// }
+								/** Segment length */
+								pValue = PyLong_FromUnsignedLong((unsigned long) seg_length);
+								PyTuple_SetItem(args, arg_index, pValue);
+								arg_index++;
+								if (!pValue) {
+									error = true;
+									goto error_check;
+								}
+								/** Total throughput */
+								pValue = PyFloat_FromDouble((double) t_stats.tot_throughput);
+								PyTuple_SetItem(args, arg_index, pValue);
+								arg_index++;
+								if (!pValue) {
+									error = true;
+									goto error_check;
+								}
+								/** Bitrate ladder */
+								pValue = PyTuple_New(sizeof(seg_bitrates)/sizeof(seg_bitrates[0]));
+								PyObject* loop_value;
+								for (int i = 0; i < N_REP; i++) {
+									loop_value = PyLong_FromLong((long) seg_bitrates[i]);
+									PyTuple_SetItem(pValue, i, loop_value);
+									if (!loop_value) {
+										error = true;
+										goto error_check;
+									}
+								}
+								PyTuple_SetItem(args, arg_index, pValue);
+								arg_index++;
+								/** Available times - deadlines */
+								pValue = PyTuple_New(sizeof(available_times)/sizeof(available_times[0]));
+								for (int i = 0; i < sizeof(available_times)/sizeof(available_times[0]); i++) {
+									loop_value = PyFloat_FromDouble((double) available_times[i]);
+									PyTuple_SetItem(pValue, i, loop_value);
+									if (!loop_value) {
+										error = true;
+										goto error_check;
+									}
+								}
+								PyTuple_SetItem(args, arg_index, pValue);
+								arg_index++;
+								/** Minimum quality value for each segment in the group */
+								pValue = PyTuple_New(sizeof(min_q)/sizeof(min_q[0]));
+								for (int i = 0; i < sizeof(min_q)/sizeof(min_q[0]); i++) {
+									loop_value = PyLong_FromLong((long) min_q[i]);
+									PyTuple_SetItem(pValue, i, loop_value);
+									if (!loop_value) {
+										error = true;
+										goto error_check;
+									}
+								}
+								PyTuple_SetItem(args, arg_index, pValue);
+								arg_index++;
+								/** Is Multistream / Multiplexing being used */
+								if (isMultiStream)
+									pValue = Py_True;
+								else
+									pValue = Py_False;
+								PyTuple_SetItem(args, arg_index, pValue);
+								arg_index++;
+								if (!pValue) {
+									error = true;
+									goto error_check;
+								}
+								/** Alpha */
+								pValue = PyFloat_FromDouble((double) alpha);
+								PyTuple_SetItem(args, arg_index, pValue);
+								arg_index++;
+								if (!pValue) {
+									error = true;
+									goto error_check;
+								}
+								/** Beta */
+								pValue = PyFloat_FromDouble((double) beta);
+								PyTuple_SetItem(args, arg_index, pValue);
+								arg_index++;
+								if (!pValue) {
+									error = true;
+									goto error_check;
+								}
+								/* pValue reference stolen here: */
+								pValue = PyObject_CallObject(myFunction, args);
+								Py_DECREF(args);
+								if (pValue != NULL) {
+									// printf("PyList_Check: %d\n", PyList_Check(pValue));
+									if (PyList_Check(pValue)) {
+										printf("PyList_Size: %d\n", PyList_Size(pValue));
+										printf("Result of call: %.1f\n", PyFloat_AsDouble(PyList_GetItem(pValue, 0)));
+										sol[n_par-1] = PyFloat_AsDouble(PyList_GetItem(pValue, 0));
+										// Skip 2nd element which is L[0]
+										for (int i = 2; i < PyList_Size(pValue); i++) {
+											printf("Result of call: %.1f\n", PyFloat_AsDouble(PyList_GetItem(pValue, i)));
+											sol[i-2] = PyFloat_AsDouble(PyList_GetItem(pValue, i));											
+										}
+										for (int i = 0; i < n_par; i++) {
+											printf("Sol[%d]: %.1f\n", i, sol[i]);											
+										}
+									}
+									Py_DECREF(pValue);
+								}
+								else {
+									Py_DECREF(myFunction);
+									Py_DECREF(myModule);
+									PyErr_Print();
+									fprintf(stderr,"Call failed\n");
+									//return 1;
+								}
+							}
+							else {
+								if (PyErr_Occurred())
+									PyErr_Print();
+								fprintf(stderr, "Cannot find function \"%s\"\n", cmd_argv[1]);
+							}
+							Py_XDECREF(myFunction);
+							Py_DECREF(myModule);
+						}
+						else {
+							PyErr_Print();
+							fprintf(stderr, "Failed to load \"%s\"\n", cmd_argv[0]);
+							//return 1;
+						}
+						if (Py_FinalizeEx() < 0) {
+							//return 120;
+						}
+						
+						error_check:
+						if (error)
+							printf("Error setting input of Python script!\n");
+						
+						// error = getMaxQINormCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.tot_throughput, seg_bitrates, available_times, min_q, sol, isMultiStream, alpha, beta);					
+					} else if (client_ctx->chosen_abr == 1)
 						error = getMaxJCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.tot_throughput, seg_bitrates, available_times, min_q, sol);
 					else if (client_ctx->chosen_abr == 2)
 						error = getMaxMinJCoefficients(N_REP, group_n, n_par, seg_length, (double) t_stats.tot_throughput, seg_bitrates, available_times, min_q, sol, isMultiStream);
