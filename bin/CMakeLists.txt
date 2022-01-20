@@ -57,6 +57,16 @@ add_executable(http_client_dofp
     test_cert.c
 )
 
+add_executable(http_client_dofp_python
+    http_client_dofp_python.c
+    abr_max_j.c
+    abr_max_min_j.c
+    abr_max_min_j_norm.c
+    prog.c
+    test_common.c
+    test_cert.c
+)
+
 #MSVC
 ELSE()
 
@@ -82,9 +92,22 @@ add_executable(http_client_dofp
     ../wincompat/getopt1.c
 )
 
+add_executable(http_client_dofp_python
+    http_client_dofp_python.c
+    abr_max_j.c
+    abr_max_min_j.c
+    abr_max_min_j_norm.c
+    prog.c
+    test_common.c
+    test_cert.c
+	../wincompat/getopt.c
+    ../wincompat/getopt1.c
+)
+
 ENDIF()
 
 TARGET_LINK_LIBRARIES(http_client_dofp ${LIBS})
+TARGET_LINK_LIBRARIES(http_client_dofp_python ${LIBS})
 TARGET_LINK_LIBRARIES(http_client_priority ${LIBS})
 TARGET_LINK_LIBRARIES(http_server_dofp ${LIBS})
 TARGET_LINK_LIBRARIES(http_server ${LIBS})
