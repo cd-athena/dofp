@@ -208,12 +208,12 @@ IF(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 ENDIF()
 
 # Find and include Python
-#
-#find_package(PythonInterp REQUIRED)
-#find_package(PythonLibs REQUIRED)
+
+find_package(PythonInterp REQUIRED)
+find_package(PythonLibs REQUIRED)
 # Need to install python-dev
-#include_directories(${PYTHON_INCLUDE_DIRS})
-#link_libraries(${PYTHON_LIBRARIES})
+include_directories(${PYTHON_INCLUDE_DIRS})
+link_libraries(${PYTHON_LIBRARIES})
 # Find and include NUMPY (?) and CVXOPT
 #
 #include_directories(${CMAKE_CURRENT_LIST_DIR}/cvxopt/src/C/)
