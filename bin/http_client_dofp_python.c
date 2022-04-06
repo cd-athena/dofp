@@ -64,10 +64,14 @@
 #include "../src/liblsquic/lsquic_conn.h"
 #include "lsxpack_header.h"
 
+/* TOS - 5 minutes */
 #define N_REP 7 /* Number of available media representations (quality levels) */
-#define K_MAX 10 /* Quality  values for average quality computation */
 #define N_MAX_SEG 75 /* Max number of segments to be downloaded */
 #define AVG_COUNT 5 /* Moving average count */
+
+/* TOS - APPLE */
+//#define N_REP 11 /* Number of available media representations (quality levels) */
+//#define N_MAX_SEG 184 /* Max number of segments to be downloaded */
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -194,30 +198,125 @@ static double           stalls_t[N_MAX_SEG] = {0.0}; /* Stalls media time */
 static double           stalls_d[N_MAX_SEG] = {0.0}; /* Stalls duration */
 static unsigned         stall_ind = 0U; // First stall is the initial buffering
 static lsquic_time_t    stall_t; /* Start stall time */
-static const char       FP_PATH[] = "tos1_h264/";
-static const char       SP_PATH[] = "/segment_";
-static const char       EXT[] = ".m4s";
 static unsigned         seg_ind = 1U;
-static char             *seg_paths[N_REP] = {"tos1_h264/107/segment_1.m4s", "tos1_h264/240/segment_1.m4s", "tos1_h264/346/segment_1.m4s", "tos1_h264/715/segment_1.m4s", "tos1_h264/1347/segment_1.m4s", "tos1_h264/2426/segment_1.m4s", "tos1_h264/4121/segment_1.m4s"}; /* To be actually parsed from an MPD file but done without loss of generality (Not considering the initialization segment) */
-static const int        seg_bitrates[N_REP] = {107, 240, 346, 715, 1347, 2426, 4121}; /* [kbps] To be actually parsed from an MPD file but done without loss of generality */
-static char             *seg_res[N_REP] = {"256x114", "426x190", "640x286", "854x382", "1280x572", "1920x858", "2560x1142"};
 static int              seg_chosen_q[N_MAX_SEG]; /* Chosen representation quality for each downloaded segment. If -1, the segment has not been yet downloaded */
 // static int              re_seg_chosen_q[N_MAX_SEG]; /* Chosen representation quality for each re-transmitted segment. If -1, the segment has not been re-transmitted */
 static int              qualities_ind = -1; /* Index for values substitution */
-static const double		alpha = .6, beta = .4;
+static const double		alpha = .4, beta = .6;
 static unsigned         rep_seg_ind = 1U;
 static double           rep_seg_time = 4.0; /* Left time for the segment to be fully reproduced (4s -> ... -> 0s) */
-static const char       WEIGHTS_FILENAME[] = "tos1_h264/weights.txt";
 static char             METRICS_FILENAME[] = "metrics_abr_00.csv";
 static char             METRICS_OUT_FILENAME[] = "metrics_abr_00_out.csv";
 static char             JSON_FILENAME[] = "itu-p1203_abr_00.json";
 static char             JSON_OUT_FILENAME[] = "itu-p1203_abr_00_out.json";
 static const float      FPS = 24.0;
 static const char       DEVICE[] = "pc";
-static const char       DISPLAYSIZE[] = "3840x2160";
+static const char       DISPLAYSIZE[] = "1920x1080";
 static const unsigned   VIEWINGDISTANCE = 150U;
 static bool             isMultiStream = false; // Set to true automatically if multiplexing feature is enabled (-w parameter > 1)
 static bool             request_cancellation = true; // True if request cancellation, or stream termination or stream cancellation, is enabled
+static unsigned         lowest_urgency = 7;
+static unsigned         highest_urgency = 0;
+
+/* APPLE */
+/*
+static char             *seg_paths[N_REP] = {"apple/145/segment_1.m4s", 
+                                             "apple/300/segment_1.m4s", 
+                                             "apple/600/segment_1.m4s", 
+                                             "apple/900/segment_1.m4s", 
+                                             "apple/1600/segment_1.m4s", 
+                                             "apple/2400/segment_1.m4s", 
+                                             "apple/3400/segment_1.m4s", 
+                                             "apple/4500/segment_1.m4s", 
+                                             "apple/5800/segment_1.m4s", 
+                                             "apple/8100/segment_1.m4s", 
+                                             "apple/11600/segment_1.m4s"}; // To be actually parsed from an MPD file but done without loss of generality (Not considering the initialization segment)
+static const int        seg_bitrates[N_REP] = {145, 300, 600, 900, 1600, 2400, 3400, 4500, 5800, 8100, 11600}; // [kbps] To be actually parsed from an MPD file but done without loss of generality
+static char             *seg_res[N_REP] = {"640x360", "768x432", "960x540", "960x540", "960x540", "1280x720", "1280x720", "1920x1080", "1920x1080", "2560x1440", "3840x2160"};
+static const char       FP_PATH[] = "apple/";
+static const char       SP_PATH[] = "/segment_";
+static const char       EXT[] = ".m4s";
+static const char       WEIGHTS_FILENAME[] = "apple/weights.txt";
+*/
+
+/* TOS */
+/*
+static char             *seg_paths[N_REP] = {"tos1_h264/107/segment_1.m4s", 
+											  "tos1_h264/240/segment_1.m4s", 
+											  "tos1_h264/346/segment_1.m4s", 
+											  "tos1_h264/715/segment_1.m4s", 
+											  "tos1_h264/1347/segment_1.m4s", 
+											  "tos1_h264/2426/segment_1.m4s", 
+											  "tos1_h264/4121/segment_1.m4s"}; // To be actually parsed from an MPD file but done without loss of generality (Not considering the initialization segment)
+static const int        seg_bitrates[N_REP] = {107, 240, 346, 715, 1347, 2426, 4121}; // [kbps] To be actually parsed from an MPD file but done without loss of generality
+static char             *seg_res[N_REP] = {"256x114", "426x190", "640x286", "854x382", "1280x572", "1920x858", "2560x1142"};
+static const char       FP_PATH[] = "tos1_h264/";
+static const char       SP_PATH[] = "/segment_";
+static const char       EXT[] = ".m4s";
+static const char       WEIGHTS_FILENAME[] = "tos1_h264/weights.txt";
+*/
+
+/* GAMEPLAY */
+
+static char             *seg_paths[N_REP] = {"gameplay_5min_4s/107/segment_1.m4s", 
+											  "gameplay_5min_4s/240/segment_1.m4s", 
+											  "gameplay_5min_4s/346/segment_1.m4s", 
+											  "gameplay_5min_4s/715/segment_1.m4s", 
+											  "gameplay_5min_4s/1347/segment_1.m4s", 
+											  "gameplay_5min_4s/2426/segment_1.m4s", 
+											  "gameplay_5min_4s/4121/segment_1.m4s"}; // To be actually parsed from an MPD file but done without loss of generality (Not considering the initialization segment)
+static const int        seg_bitrates[N_REP] = {107, 240, 346, 715, 1347, 2426, 4121}; // [kbps] To be actually parsed from an MPD file but done without loss of generality
+static char             *seg_res[N_REP] = {"256x114", "426x240", "640x360", "854x480", "1280x720", "1920x1080", "2560x1440"};
+static const char       FP_PATH[] = "gameplay_5min_4s/";
+static const char       SP_PATH[] = "/segment_";
+static const char       EXT[] = ".m4s";
+static const char       WEIGHTS_FILENAME[] = "gameplay_5min_4s/weights.txt";
+
+
+/* RALLY */
+/*
+static char             *seg_paths[N_REP] = {"rally_5min_4s/107/segment_1.m4s", 
+											  "rally_5min_4s/240/segment_1.m4s", 
+											  "rally_5min_4s/346/segment_1.m4s", 
+											  "rally_5min_4s/715/segment_1.m4s", 
+											  "rally_5min_4s/1347/segment_1.m4s", 
+											  "rally_5min_4s/2426/segment_1.m4s", 
+											  "rally_5min_4s/4121/segment_1.m4s"}; // To be actually parsed from an MPD file but done without loss of generality (Not considering the initialization segment)
+static const int        seg_bitrates[N_REP] = {107, 240, 346, 715, 1347, 2426, 4121}; // [kbps] To be actually parsed from an MPD file but done without loss of generality
+static char             *seg_res[N_REP] = {"256x114", "426x240", "640x360", "854x480", "1280x720", "1920x1080", "2560x1440"};
+static const char       FP_PATH[] = "rally_5min_4s/";
+static const char       SP_PATH[] = "/segment_";
+static const char       EXT[] = ".m4s";
+static const char       WEIGHTS_FILENAME[] = "rally_5min_4s/weights.txt";
+*/
+
+/* TOS_END */
+/*
+static char             *seg_paths[N_REP] = {"tos_5min_end_4s/107/segment_1.m4s", 
+											  "tos_5min_end_4s/240/segment_1.m4s", 
+											  "tos_5min_end_4s/346/segment_1.m4s", 
+											  "tos_5min_end_4s/715/segment_1.m4s", 
+											  "tos_5min_end_4s/1347/segment_1.m4s", 
+											  "tos_5min_end_4s/2426/segment_1.m4s", 
+											  "tos_5min_end_4s/4121/segment_1.m4s"}; // To be actually parsed from an MPD file but done without loss of generality (Not considering the initialization segment)
+static const int        seg_bitrates[N_REP] = {107, 240, 346, 715, 1347, 2426, 4121}; // [kbps] To be actually parsed from an MPD file but done without loss of generality
+static char             *seg_res[N_REP] = {"256x114", "426x190", "640x286", "854x382", "1280x572", "1920x858", "2560x1142"};
+static const char       FP_PATH[] = "tos_5min_end_4s/";
+static const char       SP_PATH[] = "/segment_";
+static const char       EXT[] = ".m4s";
+static const char       WEIGHTS_FILENAME[] = "tos_5min_end_4s/weights.txt";
+*/
+
+/* Python Helper Functions */
+void  Initialize ()
+{ 
+    Py_Initialize();
+}
+
+void Finalize ()
+{
+    Py_Finalize();
+}
 
 /* Update the buffer size when required */
 static void update_buff(bool sr){
@@ -348,9 +447,9 @@ static unsigned
 getSegIndFromPath(const char* source)
 {
     int length, i, j;
-	int target_length = 3;
+	int target_length = 5;
 	unsigned seg_ind;
-	char target[target_length]; // 2 ciphers + '/0'
+	char target[target_length]; // 4 ciphers + '/0'
     // get string length
     for (length = 0; source[length] != '\0'; length++)
         ;
@@ -504,25 +603,27 @@ struct http_client_ctx {
      * iterator is stored in hcc_cur_pe); when the end is reached, the
      * iterator wraps around.
      */
-    TAILQ_HEAD(, path_elem)      hcc_path_elems;
+    TAILQ_HEAD(, path_elem)     hcc_path_elems;
     struct path_elem            *hcc_cur_pe;
-	unsigned                     hcc_still_segments;
+	unsigned                    hcc_still_segments;
 	
-	TAILQ_HEAD(, path_elem)      hcc_ret_path_elems; // Re-transmission queue
+	TAILQ_HEAD(, path_elem)     hcc_ret_path_elems; // Re-transmission queue
     struct path_elem            *hcc_ret_pe;
-	unsigned                     hcc_open_ret_streams;
-	unsigned                     hcc_open_streams;
-	unsigned                     hcc_still_ret_segments; // Segments missing to be re-transmitted from current re-transmission window
+	unsigned                    hcc_open_ret_streams;
+	unsigned                    hcc_open_streams;
+	unsigned                    hcc_still_ret_segments; // Segments missing to be re-transmitted from current re-transmission window
 	
-	unsigned                     chosen_abr; // {0 -> Normalized_Quality_Instability; 1 -> MaxJ; 2 -> MaxMinJ (MaxJ*); 3 -> MaxMinJ_Buff_Norm; 4 -> MaxR select; 5 -> BOLA; 6 -> SARA; 7 -> BBA}
-	bool 						 h2br; // If H2BR module is implemented
-    unsigned                     hcc_total_n_reqs;
-    unsigned                     hcc_reqs_per_conn;
-    unsigned                     hcc_concurrency;
-    unsigned                     hcc_cc_reqs_per_conn;
-    unsigned                     hcc_n_open_conns;
-    unsigned                     hcc_reset_after_nbytes;
-    unsigned                     hcc_retire_cid_after_nbytes;
+	unsigned                    chosen_abr; // {0 -> Normalized_Quality_Instability; 1 -> MaxJ; 2 -> MaxMinJ (MaxJ*); 3 -> MaxMinJ_Norm; 4 -> MaxR select; 5 -> BOLA; 6 -> SARA; 7 -> BBA}
+	bool 						h2br; // If H2BR module is implemented
+	bool						incremental;
+	unsigned         			urgency;
+    unsigned                    hcc_total_n_reqs;
+    unsigned                    hcc_reqs_per_conn;
+    unsigned                    hcc_concurrency;
+    unsigned                    hcc_cc_reqs_per_conn;
+    unsigned                    hcc_n_open_conns;
+    unsigned                    hcc_reset_after_nbytes;
+    unsigned                    hcc_retire_cid_after_nbytes;
     const char                  *hcc_download_dir;
     
     char                        *hcc_sess_resume_file_name;
@@ -872,14 +973,15 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 	temp_pe = calloc(1, sizeof(*temp_pe));
 	
 	transmission:
-		printf("\nTransmission:\n");
+		// Predefined urgency for next segments
+		st_h->client_ctx->urgency = highest_urgency;
 		if (!st_h->client_ctx->hcc_cur_pe) {
 			printf("====> INIT QUEUE !\n");
 			st_h->client_ctx->hcc_cur_pe = TAILQ_FIRST(
 												&st_h->client_ctx->hcc_path_elems);
 		} else if (st_h->client_ctx->hcc_still_segments) {
 			// If we don't have space in the buffer, wait sometime before sending request for new segment
-			if (buffer_level > buffer_size){
+			if (buffer_level > buffer_size && !st_h->client_ctx->hcc_still_ret_segments){
 				printf("==> FULL BUFFER! Sleep for %d s\n", (unsigned int) seg_length);
 				sleep((unsigned int) seg_length); // Sleep for x seconds until the buffer level allow new segments download
 				st_h->sh_created = lsquic_time_now();
@@ -899,6 +1001,7 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 		else if (st_h->client_ctx->hcc_still_ret_segments) {
 			goto retransmission;
 		}
+		printf("\nTransmission of '%s':\n", st_h->client_ctx->hcc_cur_pe->path);
 		st_h->path = st_h->client_ctx->hcc_cur_pe->path;
 		st_h->isRet = false;
 		st_h->seg_ind = st_h->client_ctx->hcc_cur_pe->seg_ind;
@@ -906,7 +1009,12 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 		goto process_path;
 	
 	retransmission:
-		printf("\nRe-Transmission:\n");
+		st_h->client_ctx->urgency += 1;
+		// If new urgency is greater than 7 (0 - 7 urgency range) download anyway at lowest urgency but print the error
+		if (st_h->client_ctx->urgency > lowest_urgency) {
+			st_h->client_ctx->urgency = lowest_urgency;
+			printf("Error: the selected urgency is greater than the threshold (%u > %u).\nDownloading with lowest urgency.\n", st_h->client_ctx->urgency, lowest_urgency);
+		}
 		// temp_pe = calloc(1, sizeof(*temp_pe));
 		//if(!TAILQ_EMPTY(&st_h->client_ctx->hcc_ret_path_elems) && (st_h->client_ctx->hcc_open_ret_streams < 1)) {
 		if(!TAILQ_EMPTY(&st_h->client_ctx->hcc_ret_path_elems) && st_h->client_ctx->hcc_still_ret_segments) {
@@ -952,6 +1060,7 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 					// }
 				// }
 			// }
+			printf("\nRe-transmission of '%s':\n", st_h->client_ctx->hcc_ret_pe->path);
 			st_h->path = st_h->client_ctx->hcc_ret_pe->path; // Set the segment path
 			st_h->isRet = true; // It's a re-transmission
 			st_h->seg_ind = st_h->client_ctx->hcc_ret_pe->seg_ind;
@@ -965,12 +1074,25 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 		}
 		
 	process_path:
-		printf("\nProcess-path:\n");
+		printf("\nSetting 'priority mechanism' and processing path '%s'...\n", st_h->path);
 		// Try concurrent priority 50%,50%
+		/*
 		lsquic_stream_set_http_prio(stream, &(struct lsquic_ext_http_prio){
 						.urgency = LSQUIC_DEF_HTTP_URGENCY,
 						.incremental = 1,
 					});
+		*/
+		// Following paper findings (next segment and then last segments of the gap)
+		if (st_h->client_ctx->chosen_abr == 0 && isMultiStream) {		
+			/* Priority settings */
+			lsquic_stream_set_http_prio(stream,
+						&(struct lsquic_ext_http_prio){
+							.urgency = st_h->client_ctx->urgency,
+							.incremental = st_h->client_ctx->incremental,
+						}
+			);
+			printf("Priority settings: urgency -> %u, incremental -> %u.\n", st_h->client_ctx->urgency, st_h->client_ctx->incremental);
+		}
 	
 		if (st_h->client_ctx->payload)
 		{
@@ -1213,7 +1335,7 @@ http_client_on_read (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 	// init = lsquic_time_now();
 	
 	if (bitrate == 0 || seg_ind == 0) {
-		printf("==== UNABLE TO GATHER BITRATE OR SEG IND FROM PATH -> CLOSING STREAM ====\n");
+		printf("==== UNABLE TO GATHER BITRATE OR SEG IND FROM PATH: %s -> CLOSING STREAM ====\n", st_h->path);
 		lsquic_stream_close(stream);
 		return;
 	} // else
@@ -1420,7 +1542,8 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 		printf("Smoothed throughput: %.3Lf kbps\n", t_stats.s_throughput);
 		//t_stats.e_temp_throughput = MIN(t_stats.throughput, t_stats.s_throughput);
 		t_stats.e_temp_throughput = 0.9 * t_stats.throughput;
-		t_stats.tot_throughput += t_stats.e_temp_throughput; // Useful for computing the total throughput in multistreams scenarios
+		// t_stats.tot_throughput += t_stats.e_temp_throughput; // Useful for computing the total throughput in multistreams scenarios
+		t_stats.tot_throughput = t_stats.s_throughput < t_stats.throughput ? t_stats.s_throughput : t_stats.throughput; // Minh new dofp
 		printf("Estimated throughput: %.3Lf kbps\n", t_stats.e_temp_throughput);
 		printf("Total throughput: %.3Lf kbps\n", t_stats.tot_throughput);
 		LSQ_INFO("%s called", __func__);
@@ -1545,6 +1668,9 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 	abr:
 	/* ABR Algorithm */
 	if (client_ctx->hcc_still_ret_segments == 0 && client_ctx->hcc_still_segments == 0) { // if new segment and re-transmitted segments are received
+		// Re-initialize urgency for retransmission and priority purposes
+		client_ctx->urgency = highest_urgency;
+		// Print useful throughput information
 		printf("Total throughput: %.3Lf kbps\n", t_stats.tot_throughput);
 		if (rep_seg_ind < seg_ind) { // If there is still playout of reproduction
 			if (buffer_level >= min_init_bs && playout){
@@ -1556,7 +1682,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					// if (rep_seg_time <= available_time_off)
 						// start_seg_ind++; // Start from the second segment after the one being played out (the deadline is too short for the first one after it to be re-downloaded)
 					
-					if (buffer_level < 0.5 * buffer_size && seg_ind < N_MAX_SEG)
+					if (buffer_level < 0.5 * buffer_size && seg_ind < N_MAX_SEG && client_ctx->chosen_abr != 0)
 						start_seg_ind = seg_ind - 1; // Only download the next segment
 					
 					unsigned group_n = seg_ind - start_seg_ind;  // Number of segments in the group to be checked for [re-]transmission -> |T|
@@ -1575,16 +1701,20 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						min_q[group_n - 1] = 0;
 					printf("min_q[%u]: %d \n", group_n - 1, min_q[group_n - 1]);
 					
-					unsigned n_par = group_n; // Throughputs 
-					for (size_t i = 0; i < group_n; i++){
-						n_par += N_REP - min_q[i];
-					}
-					if (client_ctx->chosen_abr != 1)
-						n_par++; // j*
+					unsigned n_par;
+					if (client_ctx->chosen_abr != 0) {
+						n_par = group_n; // Throughputs
+						for (size_t i = 0; i < group_n; i++){
+							n_par += N_REP - min_q[i];
+						}
+						if (client_ctx->chosen_abr != 1)
+							n_par++; // j*
+					} else
+						n_par = group_n + 1;
 					
 					double available_times[group_n];
 					
-					if (buffer_level < 0.5 * buffer_size)
+					if (buffer_level < 0.5 * buffer_size && client_ctx->chosen_abr != 0)
 						available_times[0] = seg_length * 0.9;
 					else {
 						double buffer_threshold = (double) min_init_bs;
@@ -1604,8 +1734,9 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						}
 					}
 					
-					
 					double sol[n_par];
+					unsigned *retransmission_queue = NULL;
+					unsigned rq_size = 0;
 					
 					int error;
 					
@@ -1621,7 +1752,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						// n_par++;
 						
 						int cmd_argc = 2;
-						char* cmd_argv[] = {"milp", "milp_python"};
+						char* cmd_argv[] = {"milp", "initialize_run_dofp"};
 						
 						wchar_t** _argv = PyMem_Malloc(sizeof(wchar_t*)*cmd_argc);
 						for (int i=0; i<cmd_argc; i++) {
@@ -1631,7 +1762,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 
 						/* Setup */
 						Py_SetProgramName(_argv[0]);
-						Py_Initialize();
+						Initialize();
 						PySys_SetArgv(cmd_argc, _argv);
 						
 						/* Add local path */
@@ -1639,7 +1770,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						PyObject *path = PyObject_GetAttrString(sys, "path");
 						
 						/* Run the 'main' module */
-						//int rtn = Py_Main(cmd_argc, _argv); // <-- Notice the command line arguments.
+						// int rtn = Py_Main(cmd_argc, _argv); // <-- Notice the command line arguments.
 						// char filename[] = "milp.py";
 						// FILE* fp;
 
@@ -1662,17 +1793,17 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 
 							if (myFunction && PyCallable_Check(myFunction)) {
 								/*
-								N_REP --> Redundant, 
-								group_n,
-								seg_length, 
-								t_stats.tot_throughput, 
-								seg_bitrates, 
-								available_times, 
-								min_q, 
+								seg_bitrates,
+								min_q,
+								available_times --> computed in the Python script,
 								sol --> This will be returned by Python, 
-								isMultiStream, 
-								alpha, 
-								beta
+								isMultiStream --> For now not useful, 
+								t_stats.tot_throughput, 
+								current_buffer,
+								save_buffer_threshold,
+								seg_length,
+								remaining_time_current_segment,
+								retrans_strategy
 								*/
 								int arg_index = 0;
 								args = PyTuple_New(9);
@@ -1684,44 +1815,37 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 									// error = true;
 									// goto error_check;
 								// }
-								/** Number of total segments in the buffer + next segment */
-								pValue = PyLong_FromUnsignedLong((unsigned long) group_n);
-								PyTuple_SetItem(args, arg_index, pValue);
-								arg_index++;
-								if (!pValue) {
-									error = true;
-									goto error_check;
-								}
-								/** Number of total parameters */
-								// pValue = PyLong_FromUnsignedLong((unsigned long) n_par);
-								// PyTuple_SetItem(args, arg_index, pValue);
-								// arg_index++;
-								// if (!pValue) {
-									// error = true;
-									// goto error_check;
-								// }
-								/** Segment length */
-								pValue = PyLong_FromUnsignedLong((unsigned long) seg_length);
-								PyTuple_SetItem(args, arg_index, pValue);
-								arg_index++;
-								if (!pValue) {
-									error = true;
-									goto error_check;
-								}
-								/** Total throughput */
-								pValue = PyFloat_FromDouble((double) t_stats.tot_throughput);
-								PyTuple_SetItem(args, arg_index, pValue);
-								arg_index++;
-								if (!pValue) {
-									error = true;
-									goto error_check;
-								}
 								/** Bitrate ladder */
-								pValue = PyTuple_New(sizeof(seg_bitrates)/sizeof(seg_bitrates[0]));
+								pValue = PyTuple_New(sizeof(seg_bitrates)/sizeof(seg_bitrates[0]) + 1);
 								PyObject* loop_value;
+								loop_value = PyLong_FromLong((unsigned long) 0);
+									PyTuple_SetItem(pValue, 0, loop_value);
+									if (!loop_value) {
+										error = true;
+										goto error_check;
+									}
 								for (int i = 0; i < N_REP; i++) {
-									loop_value = PyLong_FromLong((long) seg_bitrates[i]);
-									PyTuple_SetItem(pValue, i, loop_value);
+									loop_value = PyLong_FromLong((unsigned long) seg_bitrates[i]);
+									PyTuple_SetItem(pValue, i+1, loop_value);
+									if (!loop_value) {
+										error = true;
+										goto error_check;
+									}
+								}
+								PyTuple_SetItem(args, arg_index, pValue);
+								arg_index++;
+								/** Minimum quality value for each segment in the group + playing segment */
+								pValue = PyTuple_New(sizeof(min_q)/sizeof(min_q[0]) + 1); // + 1 --> playing segment
+								// Add segment currently played out
+								loop_value = PyLong_FromLong((unsigned long) seg_chosen_q[rep_seg_ind - 1]);
+									PyTuple_SetItem(pValue, 0, loop_value);
+									if (!loop_value) {
+										error = true;
+										goto error_check;
+									}
+								for (int i = 0; i < sizeof(min_q)/sizeof(min_q[0]); i++) {
+									loop_value = PyLong_FromLong((unsigned long) min_q[i]);
+									PyTuple_SetItem(pValue, i+1, loop_value);
 									if (!loop_value) {
 										error = true;
 										goto error_check;
@@ -1730,72 +1854,140 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 								PyTuple_SetItem(args, arg_index, pValue);
 								arg_index++;
 								/** Available times - deadlines */
-								pValue = PyTuple_New(sizeof(available_times)/sizeof(available_times[0]));
-								for (int i = 0; i < sizeof(available_times)/sizeof(available_times[0]); i++) {
-									loop_value = PyFloat_FromDouble((double) available_times[i]);
-									PyTuple_SetItem(pValue, i, loop_value);
-									if (!loop_value) {
-										error = true;
-										goto error_check;
-									}
-								}
+								// pValue = PyTuple_New(sizeof(available_times)/sizeof(available_times[0]));
+								// for (int i = 0; i < sizeof(available_times)/sizeof(available_times[0]); i++) {
+									// loop_value = PyFloat_FromDouble((double) available_times[i]);
+									// PyTuple_SetItem(pValue, i, loop_value);
+									// if (!loop_value) {
+										// error = true;
+										// goto error_check;
+									// }
+								// }
+								// PyTuple_SetItem(args, arg_index, pValue);
+								// arg_index++;
+								/** Total throughput */
+								pValue = PyFloat_FromDouble((double) t_stats.tot_throughput);
 								PyTuple_SetItem(args, arg_index, pValue);
 								arg_index++;
-								/** Minimum quality value for each segment in the group */
-								pValue = PyTuple_New(sizeof(min_q)/sizeof(min_q[0]));
-								for (int i = 0; i < sizeof(min_q)/sizeof(min_q[0]); i++) {
-									loop_value = PyLong_FromLong((long) min_q[i]);
-									PyTuple_SetItem(pValue, i, loop_value);
-									if (!loop_value) {
-										error = true;
-										goto error_check;
-									}
+								if (!pValue) {
+									error = true;
+									goto error_check;
 								}
+								/** Number of total segments in the buffer + next segment */
+								// pValue = PyLong_FromUnsignedLong((unsigned long) group_n);
+								// PyTuple_SetItem(args, arg_index, pValue);
+								// arg_index++;
+								// if (!pValue) {
+									// error = true;
+									// goto error_check;
+								// }
+								/** Number of total parameters */
+								// pValue = PyLong_FromUnsignedLong((unsigned long) n_par);
+								// PyTuple_SetItem(args, arg_index, pValue);
+								// arg_index++;
+								// if (!pValue) {
+									// error = true;
+									// goto error_check;
+								// }
+								/** Buffer */
+								pValue = PyFloat_FromDouble((double) buffer_level);
 								PyTuple_SetItem(args, arg_index, pValue);
 								arg_index++;
+								if (!pValue) {
+									error = true;
+									goto error_check;
+								}
+								/** Save_buffer_threshold */
+								pValue = PyFloat_FromDouble((double) buffer_size/2);
+								PyTuple_SetItem(args, arg_index, pValue);
+								arg_index++;
+								if (!pValue) {
+									error = true;
+									goto error_check;
+								}
+								/** Segment length */
+								pValue = PyLong_FromUnsignedLong((unsigned long) seg_length);
+								PyTuple_SetItem(args, arg_index, pValue);
+								arg_index++;
+								if (!pValue) {
+									error = true;
+									goto error_check;
+								}
+								/** Remaining_time_current_segment */
+								pValue = PyFloat_FromDouble((double) rep_seg_time);
+								PyTuple_SetItem(args, arg_index, pValue);
+								arg_index++;
+								if (!pValue) {
+									error = true;
+									goto error_check;
+								}
+								/** Available time next segment */
+								pValue = PyFloat_FromDouble((double) available_times[sizeof(available_times)/sizeof(available_times[0])-1]);
+								PyTuple_SetItem(args, arg_index, pValue);
+								arg_index++;
+								if (!pValue) {
+									error = true;
+									goto error_check;
+								}
+								/** DoFP Strategy */
+								pValue = PyLong_FromUnsignedLong((unsigned long) 1);
+								PyTuple_SetItem(args, arg_index, pValue);
+								arg_index++;
+								if (!pValue) {
+									error = true;
+									goto error_check;
+								}
 								/** Is Multistream / Multiplexing being used */
-								if (isMultiStream)
-									pValue = Py_True;
-								else
-									pValue = Py_False;
-								PyTuple_SetItem(args, arg_index, pValue);
-								arg_index++;
-								if (!pValue) {
-									error = true;
-									goto error_check;
-								}
+								// if (isMultiStream)
+									// pValue = Py_True;
+								// else
+									// pValue = Py_False;
+								// PyTuple_SetItem(args, arg_index, pValue);
+								// arg_index++;
+								// if (!pValue) {
+									// error = true;
+									// goto error_check;
+								// }
 								/** Alpha */
-								pValue = PyFloat_FromDouble((double) alpha);
-								PyTuple_SetItem(args, arg_index, pValue);
-								arg_index++;
-								if (!pValue) {
-									error = true;
-									goto error_check;
-								}
+								// pValue = PyFloat_FromDouble((double) alpha);
+								// PyTuple_SetItem(args, arg_index, pValue);
+								// arg_index++;
+								// if (!pValue) {
+									// error = true;
+									// goto error_check;
+								// }
 								/** Beta */
-								pValue = PyFloat_FromDouble((double) beta);
-								PyTuple_SetItem(args, arg_index, pValue);
-								arg_index++;
-								if (!pValue) {
-									error = true;
-									goto error_check;
-								}
+								// pValue = PyFloat_FromDouble((double) beta);
+								// PyTuple_SetItem(args, arg_index, pValue);
+								// arg_index++;
+								// if (!pValue) {
+									// error = true;
+									// goto error_check;
+								// }
 								/* pValue reference stolen here: */
+								printf("Calling Python function!\n");
 								pValue = PyObject_CallObject(myFunction, args);
+								printf("End Python function!\n");
 								Py_DECREF(args);
 								if (pValue != NULL) {
 									// printf("PyList_Check: %d\n", PyList_Check(pValue));
 									if (PyList_Check(pValue)) {
 										printf("PyList_Size: %d\n", PyList_Size(pValue));
-										printf("Result of call: %.1f\n", PyFloat_AsDouble(PyList_GetItem(pValue, 0)));
-										sol[n_par-1] = PyFloat_AsDouble(PyList_GetItem(pValue, 0));
+										// printf("Result of call: %.1f\n", PyFloat_AsDouble(PyList_GetItem(pValue, 0)));
+										// sol[n_par-1] = PyFloat_AsDouble(PyList_GetItem(pValue, 0));
 										// Skip 2nd element which is L[0]
-										for (int i = 2; i < PyList_Size(pValue); i++) {
-											printf("Result of call: %.1f\n", PyFloat_AsDouble(PyList_GetItem(pValue, i)));
-											sol[i-2] = PyFloat_AsDouble(PyList_GetItem(pValue, i));											
-										}
 										for (int i = 0; i < n_par; i++) {
-											printf("Sol[%d]: %.1f\n", i, sol[i]);											
+											printf("Result of call: %.1f\n", PyFloat_AsDouble(PyList_GetItem(pValue, i)));
+											sol[i] = PyFloat_AsDouble(PyList_GetItem(pValue, i));
+											printf("Sol[%d]: %.1f\n", i, sol[i]);
+										}
+										if (PyList_Size(pValue) > n_par) { // If there are segments to be retransmitted
+											rq_size = PyList_Size(pValue) - n_par;
+											retransmission_queue = malloc(rq_size * sizeof(unsigned));
+											for (int i = n_par; i < PyList_Size(pValue); i++) {
+												retransmission_queue[i-n_par] = (unsigned) PyFloat_AsDouble(PyList_GetItem(pValue, i)) - 1; // - 1 because Python algorithm considers also in-play segment
+												printf("Retransmission_queue index %d: %d\n", i-n_par, retransmission_queue[i-n_par]);
+											}
 										}
 									}
 									Py_DECREF(pValue);
@@ -1821,8 +2013,12 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 							fprintf(stderr, "Failed to load \"%s\"\n", cmd_argv[0]);
 							//return 1;
 						}
-						if (Py_FinalizeEx() < 0) {
-							//return 120;
+						// if (Py_FinalizeEx() < 0) {
+							// printf("Errors reported by Python Finalize()\n");
+						// }
+						// Finalize Python Module
+						if (atexit(Finalize) != 0) { // Numpy module does not like to be initialized twice --> needs to be managed with "atexit"
+							printf("Errors reported by atexit in terminating 'Finalize()'\n");
 						}
 						
 						error_check:
@@ -1849,31 +2045,40 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					}
 					
 					unsigned chosen_q[group_n];
-					for (size_t i = 0; i < group_n; i++)
-						chosen_q[i] = min_q[i];
-					
 					double chosen_T[group_n];
 					
-					printf("\nSOLUTIONS:\n");
-					unsigned temp_ind = 0;
-					for (size_t i = 0; i < group_n; i++){
-						for (size_t j = min_q[i]; j < N_REP; j++){
-							if ((unsigned) (sol[temp_ind]) == 1)
-								chosen_q[i] = (int) j;
-							temp_ind++;
+					// Adapt the size of the solution set (playing segment + buffer + next segment) to chosen_q (buffer + next segment)
+					if (client_ctx->chosen_abr == 0) {
+						printf("\nSOLUTIONS:\n");
+						for (size_t i = 0; i < group_n; i++){
+							chosen_q[i] = (unsigned) sol[i+1] - 1; // Python script works with {quality + 1}
+							printf("Segment %lu: Old Quality -> %i; New Quality -> %i\n", i + start_seg_ind + 1, min_q[i], chosen_q[i]);
 						}
+					} else {
+						for (size_t i = 0; i < group_n; i++)
+							chosen_q[i] = min_q[i];
+						
+						printf("\nSOLUTIONS:\n");
+						unsigned temp_ind = 0;
+						for (size_t i = 0; i < group_n; i++){
+							for (size_t j = min_q[i]; j < N_REP; j++){
+								if ((unsigned) (sol[temp_ind]) == 1)
+									chosen_q[i] = (int) j;
+								temp_ind++;
+							}
+							//if (client_ctx->chosen_abr != 1)
+							if (client_ctx->chosen_abr > 1)
+								chosen_T[i] = sol[n_par - group_n - 1 + i];
+							else 
+								chosen_T[i] = sol[n_par - group_n + i];
+						}
+						
+						for (size_t i = 0; i < group_n; i++)
+							printf("Segment %lu: Old Quality -> %i; New Quality -> %i; Throughput -> %.0f\n", i + start_seg_ind + 1, min_q[i], chosen_q[i], chosen_T[i]);
+						// Print J* [and Q*]
 						if (client_ctx->chosen_abr != 1)
-							chosen_T[i] = sol[n_par - group_n - 1 + i];
-						else
-							chosen_T[i] = sol[n_par - group_n + i];
-					//printf("\n\n");
+							printf("J* -> %.0f\n", sol[n_par - 1]);
 					}
-					
-					for (size_t i = 0; i < group_n; i++)
-						printf("Segment %lu: Quality -> %i; Throughput -> %.0f\n", i + start_seg_ind + 1, chosen_q[i], chosen_T[i]);
-					// Print J* [and Q*]
-					if (client_ctx->chosen_abr != 1)
-						printf("J* -> %.0f\n", sol[n_par - 1]);
 					
 					if (seg_ind <= N_MAX_SEG) { // NEW SEGMENTS TO DOWNLOAD
 						// Only send the next segment, don't retransmit
@@ -1881,6 +2086,8 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						struct path_elem *pe;
 						pe = calloc(1, sizeof(*pe));
 						next_quality = chosen_q[sizeof(chosen_q)/sizeof(chosen_q[0]) - 1]; // Gather segment chosen quality
+						if (next_quality < 0)
+							next_quality = 0;
 						pe->path = seg_paths[next_quality]; /* Path of the next requested segment */
 						pe->seg_ind = seg_ind;
 						pe->seg_q = next_quality;
@@ -1907,26 +2114,52 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						// printf("Segment %lu: Quality -> %i; Throughput -> %.0f\n", i + start_seg_ind + 1, chosen_q[i], chosen_T[i]);
 					
 					// Segments re-transmission for the buffered segments
-					
-					for (unsigned i = 0; i < group_n - 1; ++i) {
-						if (chosen_q[i] != min_q[i]) { // If the chosen quality is higher than the buffered one (&& at least equal to the subsequent one)
-							//Retransmit
-							++client_ctx->hcc_still_ret_segments;
-							/* Create path for to-be-re-transmitted segment */
-							int up_len = strlen(FP_PATH) + 4 + strlen(SP_PATH) + strlen(EXT) + 3; // ciphers as index (1,..,999)"
-							char* temp_pp = (char*)malloc((up_len+1)*sizeof(char));
-							snprintf(temp_pp, (up_len+1)*sizeof(char), "%s%d%s%d%s", FP_PATH, seg_bitrates[chosen_q[i]], SP_PATH, i + start_seg_ind + 1, EXT);
-							/* Insert path element in TAILQ */
-							struct path_elem *pe;
-							pe = calloc(1, sizeof(*pe));
-							pe->path = temp_pp; /* Path of the next requested segment */
-							pe->seg_ind = i + start_seg_ind + 1;
-							pe->seg_q = chosen_q[i];
-							printf("Added to the queue: segment index %u, representation %u, segment path '%s'\n", i + start_seg_ind + 1, chosen_q[i], pe->path);
-							TAILQ_INSERT_TAIL(&client_ctx->hcc_ret_path_elems, pe, next_pe);
-							conn_h->ch_n_reqs += MIN(client_ctx->hcc_total_n_reqs,
-															client_ctx->hcc_reqs_per_conn);
-							client_ctx->hcc_total_n_reqs -= conn_h->ch_n_reqs;
+					if (client_ctx->chosen_abr == 0 && retransmission_queue) {
+						printf("In the retransmission selection...\n");
+						for (unsigned i = 0; i < rq_size; ++i) {
+							if (chosen_q[retransmission_queue[i]] != min_q[retransmission_queue[i]]) { // If the chosen quality is higher than the buffered one (&& at least equal to the subsequent one)
+								//Retransmit
+								++client_ctx->hcc_still_ret_segments;
+								/* Create path for to-be-re-transmitted segment */
+								int up_len = strlen(FP_PATH) + 6 + strlen(SP_PATH) + strlen(EXT) + 6; // ciphers as index (1,..,999)"
+								char* temp_pp = (char*)malloc((up_len+1)*sizeof(char));
+								snprintf(temp_pp, (up_len+1)*sizeof(char), "%s%d%s%d%s", FP_PATH, seg_bitrates[chosen_q[retransmission_queue[i]]], SP_PATH, retransmission_queue[i] + start_seg_ind + 1, EXT);
+								/* Insert path element in TAILQ */
+								struct path_elem *pe;
+								pe = calloc(1, sizeof(*pe));
+								pe->path = temp_pp; /* Path of the next requested segment */
+								pe->seg_ind = retransmission_queue[i] + start_seg_ind + 1;
+								pe->seg_q = chosen_q[retransmission_queue[i]];
+								printf("Added to the queue: segment index %u, representation %u, segment path '%s'\n", retransmission_queue[i] + start_seg_ind + 1, chosen_q[retransmission_queue[i]], pe->path);
+								TAILQ_INSERT_TAIL(&client_ctx->hcc_ret_path_elems, pe, next_pe);
+								conn_h->ch_n_reqs += MIN(client_ctx->hcc_total_n_reqs,
+																client_ctx->hcc_reqs_per_conn);
+								client_ctx->hcc_total_n_reqs -= conn_h->ch_n_reqs;
+							}
+						}
+						// Free pointer
+						free(retransmission_queue);
+					} else {
+						for (unsigned i = 0; i < group_n - 1; ++i) {
+							if (chosen_q[i] != min_q[i]) { // If the chosen quality is higher than the buffered one (&& at least equal to the subsequent one)
+								//Retransmit
+								++client_ctx->hcc_still_ret_segments;
+								/* Create path for to-be-re-transmitted segment */
+								int up_len = strlen(FP_PATH) + 6 + strlen(SP_PATH) + strlen(EXT) + 6; // ciphers as index (1,..,999)"
+								char* temp_pp = (char*)malloc((up_len+1)*sizeof(char));
+								snprintf(temp_pp, (up_len+1)*sizeof(char), "%s%d%s%d%s", FP_PATH, seg_bitrates[chosen_q[i]], SP_PATH, i + start_seg_ind + 1, EXT);
+								/* Insert path element in TAILQ */
+								struct path_elem *pe;
+								pe = calloc(1, sizeof(*pe));
+								pe->path = temp_pp; /* Path of the next requested segment */
+								pe->seg_ind = i + start_seg_ind + 1;
+								pe->seg_q = chosen_q[i];
+								printf("Added to the queue: segment index %u, representation %u, segment path '%s'\n", i + start_seg_ind + 1, chosen_q[i], pe->path);
+								TAILQ_INSERT_TAIL(&client_ctx->hcc_ret_path_elems, pe, next_pe);
+								conn_h->ch_n_reqs += MIN(client_ctx->hcc_total_n_reqs,
+																client_ctx->hcc_reqs_per_conn);
+								client_ctx->hcc_total_n_reqs -= conn_h->ch_n_reqs;
+							}
 						}
 					}
 				} else if (client_ctx->chosen_abr == 4) { // MaxR select
@@ -2367,10 +2600,10 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 			}
 		} else {
 			if (client_ctx->hcc_still_segments) {			// Check if next stream is re-transmission and - if so - whether it is possible or not
-				printf("Transmission\n");
+				printf("\nTransmission is possible.\n");
 				create_streams(client_ctx, conn_h); // Open the transmission stream
 			} else if (client_ctx->hcc_still_ret_segments) {
-				printf("\nRe-transmission path update\n");
+				printf("\nRe-transmission path update.\n");
 				struct path_elem *temp_pe;
 				temp_pe = calloc(1, sizeof(*temp_pe));
 				if (client_ctx->hcc_ret_pe)
@@ -3120,15 +3353,6 @@ main (int argc, char **argv)
         b_m_stats.Vm[i] = log((double) seg_bitrates[i] / seg_bitrates[0]);
     }
 // Minh - Add BOLA ABR - ADD - E    
-	// Initialization of W values for SARA
-	weights_init(s_stats.W, WEIGHTS_FILENAME);
-	
-	// for (ssize_t i = 0; i < N_REP; i++) {
-		// for (ssize_t j = 0; j < N_MAX_SEG; j++) {
-			// printf("%Lf ", s_stats.W[i][j]);
-		// }
-		// printf("\n");
-	// }
 
     TAILQ_INIT(&sports);
     memset(&client_ctx, 0, sizeof(client_ctx));
@@ -3350,8 +3574,10 @@ main (int argc, char **argv)
 	// Set file path for json qoe metrics
 	snprintf(JSON_OUT_FILENAME, sizeof(JSON_OUT_FILENAME), "%s%i%s", "itu-p1203_abr_", client_ctx.chosen_abr, "_out.json");
 	
-	if (client_ctx.chosen_abr == 6) // SARA
+	if (client_ctx.chosen_abr == 6) { // SARA
 		min_init_bs = s_stats.I;
+		weights_init(s_stats.W, WEIGHTS_FILENAME); // Initialization of W values for SARA
+	}
 
 #if LSQUIC_CONN_STATS
     prog.prog_api.ea_stats_fh = stats_fh;
@@ -3414,6 +3640,8 @@ main (int argc, char **argv)
     LSQ_DEBUG("entering event loop");
 	
 	s = prog_run(&prog);
+	
+	printf("Exiting run - Computing metrics...\n");
 
 	if (stats_fh)
 	{
@@ -3435,12 +3663,12 @@ main (int argc, char **argv)
 	if (!fp)
 		printf("Error opening JSON file %s!\n", METRICS_FILENAME);
 	fprintf(fp, "THROUGHPUT,BITRATE,BUFFER,QUALITY,STALLT,STALLD");
-	if (client_ctx.chosen_abr < 4)
+	if (client_ctx.chosen_abr < 4 || client_ctx.h2br)
 		fprintf(fp, ",REDATA,RECOUNT,REUNUSED,REUNUSEDCOUNT");
 	fprintf(fp, "\n");
 	for (size_t i = 0; i < N_MAX_SEG; i++) {
 		fprintf(fp, "%.2Lf,%i,%.3f,%i,%.3f,%.3f", t_stats.e_throughput[i], seg_bitrates[seg_chosen_q[i]], t_stats.b_level[i], seg_chosen_q[i], stalls_t[i], stalls_d[i]);
-		if ((i == 0 && client_ctx.chosen_abr < 4) || client_ctx.h2br)
+		if (i == 0 && (client_ctx.chosen_abr < 4 || client_ctx.h2br))
 			fprintf(fp, ",%.3Lf,%u,%.3Lf,%u", w_stats.re_data, w_stats.re_count, w_stats.re_unused_data, w_stats.re_unused_count);
 		fprintf(fp, "\n");
 	}
@@ -3452,11 +3680,11 @@ main (int argc, char **argv)
 		printf("Error opening JSON file %s!\n", JSON_FILENAME);
 	fprintf(jfp, "{\"I11\":{\"segments\":[],\"streamId\":42},\"I13\":{\"segments\":[");
 	unsigned int start = 0U;
-	fprintf(jfp, "{\"bitrate\":%i,\"codec\":\"h264\",\"duration\":%u,\"fps\":%.1f,\"resolution\":\"%s\",\"start\":%u}", 
+	fprintf(jfp, "{\"bitrate\":%i,\"codec\":\"hevc\",\"duration\":%u,\"fps\":%.1f,\"resolution\":\"%s\",\"start\":%u}", 
 			seg_bitrates[seg_chosen_q[0]], seg_length, FPS, seg_res[seg_chosen_q[0]], start);
 	start += seg_length;
 	for (size_t i = 1; i < N_MAX_SEG; i++) {
-		fprintf(jfp, ",{\"bitrate\": %i,\"codec\":\"h264\",\"duration\":%u,\"fps\":%.1f,\"resolution\":\"%s\",\"start\":%u}", 
+		fprintf(jfp, ",{\"bitrate\": %i,\"codec\":\"hevc\",\"duration\":%u,\"fps\":%.1f,\"resolution\":\"%s\",\"start\":%u}", 
 			seg_bitrates[seg_chosen_q[i]], seg_length, FPS, seg_res[seg_chosen_q[i]], start);
 	start += seg_length;
 	}

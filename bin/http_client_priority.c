@@ -426,6 +426,7 @@ http_client_on_conn_closed (lsquic_conn_t *conn)
     char errmsg[80];
 
     status = lsquic_conn_status(conn, errmsg, sizeof(errmsg));
+	printf("Closing connection!\n");
     LSQ_INFO("Connection closed.  Status: %d.  Message: %s", status,
         errmsg[0] ? errmsg : "<not set>");
     if (conn_h->client_ctx->hcc_flags & HCC_ABORT_ON_INCOMPLETE)

@@ -5,7 +5,7 @@ import time
 
 # seg_duration = 4
 # bitrate = {1: 200, 2: 500, 3: 1000, 4: 2000, 5: 5000}
-#
+
 # omega = 10000
 # qi = {1: 2, 2: 3, 3: 2, 4: 1, 5: 1}
 # segment = [1, 2, 3, 4, 5]
@@ -29,7 +29,7 @@ def milp_function():
     a = LpVariable.dicts("a[(segment,level)]", [(i, j) for i in segment
                                                 for j in bitrate.keys() if j >= qi[i]], 0, 1, LpBinary)
 
-    t = LpVariable.dicts("t[(segment)]", [i for i in segment], 0, omega)
+    # t = LpVariable.dicts("t[(segment)]", [i for i in segment], 0, omega)
 
     L = LpVariable.dicts("L", [0], 0, 1000000)
 
@@ -45,6 +45,14 @@ def milp_function():
 
     prob += alpha * (1 / q_norm_factor) * (J[0] + lpSum(a[(i, j)] * j for i in segment for j in bitrate.keys() if j >= qi[i])) - beta * (1 / (1 if len(segment) == 1 else len(segment[:-1]) * max(bitrate.keys()))) * L[0]
 
+    # j_norm_factor = 1 / max(bitrate.keys())
+    # q_norm_factor = 0
+    # for i in segment:
+    #     q_norm_factor += pow(max(bitrate.keys()), i + 1)
+    # q_norm_factor = 1 / q_norm_factor
+    #
+    # prob += alpha * 0.5 * (J[0] * j_norm_factor + lpSum(a[(i, j)] * j * pow(max(bitrate.keys()), i) for i in segment for j in bitrate.keys() if j >= qi[i]) * q_norm_factor) - beta * (1 / (1 if len(segment) == 1 else len(segment[:-1]) * max(bitrate.keys()))) * L[0]
+
     # const 1
     for i in segment:
         c1 = lpSum(a[(i, j)] for j in bitrate.keys() if j >= qi[i]) - 1 == 0
@@ -52,16 +60,20 @@ def milp_function():
         prob += c1
 
     # const 2
-    for i in segment:
-        c2 = lpSum(a[(i, j)] * seg_duration * bitrate[j] for j in bitrate.keys() if j > qi[i]) - deadlines[i - 1] * t[
-            i] <= 0
+    # available_time_{i} > sum_{j=first_seg:seg_i}(download_time_{j})
+    # strategy [N,A,B,C,...]
+    c2 = lpSum(a[(segment[-1], j)] * bitrate[j] for j in bitrate.keys() if j > 1) * seg_duration / omega <= deadlines[-1]
+    # print(c2)
+    prob += c2
+    for i in segment[:-1]:
+        c2 = lpSum(a[(segment[-1], j)] * bitrate[j] for j in bitrate.keys()) * seg_duration / omega + lpSum(a[(k, j)] * bitrate[j] for k in range(1, i + 1) for j in bitrate.keys() if j > qi[k]) * seg_duration / omega <= deadlines[i - 1]
         # print(c2)
         prob += c2
 
     # const 3
-    c3 = lpSum(t[i] for i in segment) <= omega
+    # c3 = lpSum(t[i] for i in segment) <= omega
     # print(c3)
-    prob += c3
+    # prob += c3
 
     # const 4
     for i in segment[:-1]:
@@ -111,7 +123,8 @@ def milp_function():
     #             opt_quality_num=int(q)
 
     v_values = []
-    n_useful_par = 2 + len(segment)  # J[0], L[0] and T[i]s
+    # n_useful_par = 2 + len(segment)  # J[0], L[0] and T[i]s
+    n_useful_par = 2
     for i in segment:
         n_useful_par += max(bitrate.keys()) - qi[i] + 1
 
@@ -121,10 +134,10 @@ def milp_function():
             break
         # if v.varValue > 0:
         #     print(v.name, "=", v.varValue), v.name[1]
-        # print(v.name, "=", v.varValue), v.name[1]
+        print(v.name, "=", v.varValue), v.name[1]
         v_values.append(v.varValue)
         count += 1
-    # print(v_values)
+    print(v_values)
     return v_values
 
 

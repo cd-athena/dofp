@@ -7,7 +7,7 @@
 
 /* This example formulates and solves the following simple MIP model:
 
-    maximize    alpha (j* / N + sum_(j) (a_{ij} * j * N^i) / (N * N^i)) + betha * rebuffering -> [j* = Min(j_{i})], for every segment i
+    maximize    alpha * (j* / N) + beta * (sum_(j) (a_{ij} * j * N^i) / (N * N^i)) -> [j* = Min(j_{i})], for every segment i
     subject to  sum_(j) (a_{ij}) = 1 for every segment i
 	            seg_dur x bitrates[i] - available_times[i] * Ti <= 0 for every segment i
 				sum_(i) (Ti) <= bandwidth
