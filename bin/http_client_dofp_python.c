@@ -64,6 +64,16 @@
 #include "../src/liblsquic/lsquic_conn.h"
 #include "lsxpack_header.h"
 
+/* COLOR PRINT SETTINGS */
+#define KNRM  "\x1B[0m"
+#define KRED  "\x1B[31m"
+#define KGRN  "\x1B[32m"
+#define KYEL  "\x1B[33m"
+#define KBLU  "\x1B[34m"
+#define KMAG  "\x1B[35m"
+#define KCYN  "\x1B[36m"
+#define KWHT  "\x1B[37m"
+
 /* TOS - 5 minutes */
 #define N_REP 7 /* Number of available media representations (quality levels) */
 #define N_MAX_SEG 75 /* Max number of segments to be downloaded */
@@ -271,7 +281,7 @@ static const char       FP_PATH[] = "gameplay_5min_4s/";
 static const char       SP_PATH[] = "/segment_";
 static const char       EXT[] = ".m4s";
 static const char       WEIGHTS_FILENAME[] = "gameplay_5min_4s/weights.txt";
-
+static const char       VIDEO_NAME[] = "Gameplay";
 
 /* RALLY */
 /*
@@ -976,9 +986,10 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 		// Predefined urgency for next segments
 		st_h->client_ctx->urgency = highest_urgency;
 		if (!st_h->client_ctx->hcc_cur_pe) {
-			printf("====> INIT QUEUE !\n");
+			//printf("====> INIT QUEUE !\n");
 			st_h->client_ctx->hcc_cur_pe = TAILQ_FIRST(
 												&st_h->client_ctx->hcc_path_elems);
+			st_h->client_ctx->hcc_cur_pe->seg_ind = 1U;
 		} else if (st_h->client_ctx->hcc_still_segments) {
 			// If we don't have space in the buffer, wait sometime before sending request for new segment
 			if (buffer_level > buffer_size && !st_h->client_ctx->hcc_still_ret_segments){
@@ -1001,11 +1012,11 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 		else if (st_h->client_ctx->hcc_still_ret_segments) {
 			goto retransmission;
 		}
-		printf("\nTransmission of '%s':\n", st_h->client_ctx->hcc_cur_pe->path);
 		st_h->path = st_h->client_ctx->hcc_cur_pe->path;
 		st_h->isRet = false;
 		st_h->seg_ind = st_h->client_ctx->hcc_cur_pe->seg_ind;
 		st_h->seg_q = st_h->client_ctx->hcc_cur_pe->seg_q;
+		printf("\n" KRED "Request sent " KWHT "for " KGRN "transmission" KWHT ":\n\t" KRED "Video name: " KGRN "'%s'\n\t" KRED "Segment index: " KGRN "%d\n\t" KRED "Bitrate: " KGRN "%i kbps\n\t" KRED "Resolution: " KGRN "%s\n" KNRM, VIDEO_NAME, st_h->seg_ind, seg_bitrates[st_h->seg_q], seg_res[st_h->seg_q]);
 		goto process_path;
 	
 	retransmission:
@@ -1013,7 +1024,7 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 		// If new urgency is greater than 7 (0 - 7 urgency range) download anyway at lowest urgency but print the error
 		if (st_h->client_ctx->urgency > lowest_urgency) {
 			st_h->client_ctx->urgency = lowest_urgency;
-			printf("Error: the selected urgency is greater than the threshold (%u > %u).\nDownloading with lowest urgency.\n", st_h->client_ctx->urgency, lowest_urgency);
+			// printf("Error: the selected urgency is greater than the threshold (%u > %u).\nDownloading with lowest urgency.\n", st_h->client_ctx->urgency, lowest_urgency);
 		}
 		// temp_pe = calloc(1, sizeof(*temp_pe));
 		//if(!TAILQ_EMPTY(&st_h->client_ctx->hcc_ret_path_elems) && (st_h->client_ctx->hcc_open_ret_streams < 1)) {
@@ -1060,12 +1071,12 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 					// }
 				// }
 			// }
-			printf("\nRe-transmission of '%s':\n", st_h->client_ctx->hcc_ret_pe->path);
 			st_h->path = st_h->client_ctx->hcc_ret_pe->path; // Set the segment path
 			st_h->isRet = true; // It's a re-transmission
 			st_h->seg_ind = st_h->client_ctx->hcc_ret_pe->seg_ind;
 			st_h->seg_q = st_h->client_ctx->hcc_ret_pe->seg_q;
 			//++st_h->client_ctx->hcc_open_ret_streams; // This stream belongs to the re-transmission ones
+			printf("\n" KRED "Request sent " KWHT "for " KGRN "retransmission" KWHT ":\n\t" KRED "Video name: " KGRN "'%s'\n\t" KRED "Segment index: " KGRN "%d\n\t" KRED "Bitrate: " KGRN "%i kbps\n\t" KRED "Resolution: " KGRN "%s\n" KNRM, VIDEO_NAME, st_h->seg_ind, seg_bitrates[st_h->seg_q], seg_res[st_h->seg_q]);
 			goto process_path; // Process the request
 		} else {
 			LSQ_ERROR("NO SEGMENTS IN RETRANSMISSION QUEUE.");
@@ -1074,7 +1085,7 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 		}
 		
 	process_path:
-		printf("\nSetting 'priority mechanism' and processing path '%s'...\n", st_h->path);
+		// printf("\nSetting 'priority mechanism' and processing path '%s'...\n", st_h->path);
 		// Try concurrent priority 50%,50%
 		/*
 		lsquic_stream_set_http_prio(stream, &(struct lsquic_ext_http_prio){
@@ -1091,7 +1102,7 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 							.incremental = st_h->client_ctx->incremental,
 						}
 			);
-			printf("Priority settings: urgency -> %u, incremental -> %u.\n", st_h->client_ctx->urgency, st_h->client_ctx->incremental);
+			// printf("Priority settings: urgency -> %u, incremental -> %u.\n", st_h->client_ctx->urgency, st_h->client_ctx->incremental);
 		}
 	
 		if (st_h->client_ctx->payload)
@@ -1375,6 +1386,9 @@ http_client_on_read (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
         {
             st_h->sh_nread += (size_t) nread;
             s_stat_downloaded_bytes += nread;
+			// printf("\nPacket received. Data will be displayed...\n");
+			// fwrite(buf, 1, nread, st_h->download_fh ? st_h->download_fh : stdout);
+			// printf("\n");
 			end = lsquic_time_now();
 			// printf("Init: %ld; End: %ld\n", st_h->sh_created, end);
 			// printf("Difference: %ld\n", end - st_h->sh_created);
@@ -1523,11 +1537,11 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 	--conn_h->ch_n_reqs;
 	--conn_h->ch_n_cc_streams;
 	
-	printf("SRS: %i, SS: %i", client_ctx->hcc_still_ret_segments, client_ctx->hcc_still_segments);
+	// printf("SRS: %i, SS: %i", client_ctx->hcc_still_ret_segments, client_ctx->hcc_still_segments);
 	
 	if (client_ctx->hcc_still_ret_segments || client_ctx->hcc_still_segments) {
 	
-		printf("Read bytes: %.0ld, time_now(): %.0ld, st_h->sh_created: %.0ld, download time: %.0ld\n", st_h->sh_nread, lsquic_time_now(), st_h->sh_created, (lsquic_time_now() - st_h->sh_created) / 1000000);
+		// printf("Read bytes: %.0ld, time_now(): %.0ld, st_h->sh_created: %.0ld, download time: %.0ld\n", st_h->sh_nread, lsquic_time_now(), st_h->sh_created, (lsquic_time_now() - st_h->sh_created) / 1000000);
 		
 		long double new_throughput = (long double) st_h->sh_nread * 8 / ((long double) 1000 * (lsquic_time_now() - st_h->sh_created) / 1000000); // [kbps]
 		/* Smoothed throughput computation */
@@ -1538,14 +1552,14 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 		/* Throughput computation */
 		t_stats.throughput = new_throughput;
 		// Estimated Throughput is the MIN(Smoothed and Normal)
-		printf("Throughput: %.3Lf kbps\n", t_stats.throughput);
-		printf("Smoothed throughput: %.3Lf kbps\n", t_stats.s_throughput);
-		//t_stats.e_temp_throughput = MIN(t_stats.throughput, t_stats.s_throughput);
+		// printf("Throughput: %.3Lf kbps\n", t_stats.throughput);
+		// printf("Smoothed throughput: %.3Lf kbps\n", t_stats.s_throughput);
+		// t_stats.e_temp_throughput = MIN(t_stats.throughput, t_stats.s_throughput);
 		t_stats.e_temp_throughput = 0.9 * t_stats.throughput;
 		// t_stats.tot_throughput += t_stats.e_temp_throughput; // Useful for computing the total throughput in multistreams scenarios
 		t_stats.tot_throughput = t_stats.s_throughput < t_stats.throughput ? t_stats.s_throughput : t_stats.throughput; // Minh new dofp
-		printf("Estimated throughput: %.3Lf kbps\n", t_stats.e_temp_throughput);
-		printf("Total throughput: %.3Lf kbps\n", t_stats.tot_throughput);
+		// printf("Estimated throughput: %.3Lf kbps\n", t_stats.e_temp_throughput);
+		// printf("Total throughput: %.3Lf kbps\n", t_stats.tot_throughput);
 		LSQ_INFO("%s called", __func__);
 		// struct http_client_ctx *const client_ctx = st_h->client_ctx;
 		// lsquic_conn_t *const conn = lsquic_stream_conn(stream);
@@ -1553,7 +1567,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 		// --conn_h->ch_n_reqs;
 		// --conn_h->ch_n_cc_streams;
 		double download_time = (double) (lsquic_time_now() - st_h->sh_created) / 1000000;
-		printf("Stream init: %.3f; Stream close: %.3f; Download time: %.3f.\n", (double) st_h->sh_created / 1000000, (double) lsquic_time_now() / 1000000, download_time);
+		// printf("Stream init: %.3f; Stream close: %.3f; Download time: %.3f.\n", (double) st_h->sh_created / 1000000, (double) lsquic_time_now() / 1000000, download_time);
 		if (!st_h->isRet){
 			if (!st_h->isTerminated) {
 				seg_chosen_q[++qualities_ind] = st_h->seg_q;
@@ -1569,20 +1583,21 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					if (seg_ind > AVG_COUNT)
 						start_ind = seg_ind - AVG_COUNT;
 					for (size_t i = start_ind; i < seg_ind; i++) {
-						printf("i: %zu, count: %u, seg_ind: %u\n", i, AVG_COUNT, seg_ind);
+						// printf("i: %zu, count: %u, seg_ind: %u\n", i, AVG_COUNT, seg_ind);
 						num += s_stats.weights[i];
 						den += s_stats.weights[i]*1.0 / s_stats.down_rate[i];
-						printf("i: %zu -> s_stats.weights: %.3Lf, s_stats.down_rate: %.3Lf\n", i, s_stats.weights[i], s_stats.down_rate[i]);
+						// printf("i: %zu -> s_stats.weights: %.3Lf, s_stats.down_rate: %.3Lf\n", i, s_stats.weights[i], s_stats.down_rate[i]);
 					}			
 					s_stats.H = (double) num / den;
 				}
-				printf("Transmitted segment from path: %s\n", st_h->path);
+				printf("\n" KBLU "Response completed " KWHT "for " KGRN "transmission " KWHT "of segment:\n\t" KBLU "Video name: " KGRN "'%s'\n\t" KBLU "Segment index: " KGRN "%d\n\t" KBLU "Bitrate: " KGRN "%i kbps\n\t" KBLU "Resolution: " KGRN "%s\n" KNRM, VIDEO_NAME, st_h->seg_ind, seg_bitrates[st_h->seg_q], seg_res[st_h->seg_q]);
 				/* Buffer update */
 				update_buff(true); // [true] is "Segment Received"
 				t_stats.b_level[qualities_ind] = buffer_level;
 				printf("Buffer size: %.3f sec\n", buffer_level);
-				printf("Segment reproduced: %u\n", rep_seg_ind);
-				printf("Time left for reproduced segment: %.3f sec\n", rep_seg_time);
+				printf("Total throughput: %.3Lf kbps\n", t_stats.tot_throughput);
+				// printf("Segment reproduced: %u\n", rep_seg_ind);
+				// printf("Time left for reproduced segment: %.3f sec\n", rep_seg_time);
 				--client_ctx->hcc_still_segments;
 				--client_ctx->hcc_open_streams;
 				/* QUALITY PRINT */
@@ -1605,13 +1620,13 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						int up_len = strlen(FP_PATH) + 6 + strlen(SP_PATH) + strlen(EXT) + 6; // 6 is the max. number of bitrate ciphers, 6 is the max. segment index (1,..,999999)"
 						char* temp_pp = (char*)malloc((up_len+1)*sizeof(char));
 						snprintf(temp_pp, (up_len+1)*sizeof(char), "%s%d%s%d%s", FP_PATH, seg_bitrates[i], SP_PATH, seg_ind, EXT);
-						printf("Updated path %d: %s\n", (int) i, temp_pp);
+						// printf("Updated path %d: %s\n", (int) i, temp_pp);
 						seg_paths[i] = temp_pp;
 						temp_pp = NULL;
 					}
 				} else {
 					update_buff(false);
-					printf("===! END OF SEGMENTS !===\n");
+					// printf("===! END OF SEGMENTS !===\n");
 					printf("!! Closing connection !!\n");
 					client_ctx->hcc_total_n_reqs = 0;
 					lsquic_conn_close(conn_h->conn);
@@ -1622,27 +1637,28 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 				--client_ctx->hcc_open_streams;
 			}
 		} else {
-			/* Buffer update */
-			update_buff(false); // [false] is "Normal Update" (the re-transmission of a segment doesn't add seconds to the buffer time)
-			printf("Buffer size: %.3f sec\n", buffer_level);
-			printf("Segment reproduced: %u\n", rep_seg_ind);
-			printf("Time left for reproduced segment: %.3f sec\n", rep_seg_time);
+			// printf("Segment reproduced: %u\n", rep_seg_ind);
+			// printf("Time left for reproduced segment: %.3f sec\n", rep_seg_time);
 			//--client_ctx->hcc_open_ret_streams;
 			--client_ctx->hcc_open_streams;
 			--client_ctx->hcc_still_ret_segments;
 			w_stats.re_count++;
 			w_stats.re_data += st_h->sh_nread / 1000;
 			if (!st_h->isTerminated) {
-				printf("Re-Transmitted segment from path: %s\n", st_h->path);
+				printf("\n" KBLU "Response completed " KWHT "for " KGRN "re-transmission " KWHT "of segment:\n\t" KBLU "Video name: " KGRN "'%s'\n\t" KBLU "Segment index: " KGRN "%d\n\t" KBLU "Bitrate: " KGRN "%i kbps\n\t" KBLU "Resolution: " KGRN "%s\n" KNRM, VIDEO_NAME, st_h->seg_ind, seg_bitrates[st_h->seg_q], seg_res[st_h->seg_q]);
+				/* Buffer update */
+				update_buff(false); // [false] is "Normal Update" (the re-transmission of a segment doesn't add seconds to the buffer time)
+				printf("Buffer size: %.3f sec\n", buffer_level);
+				printf("Total throughput: %.3Lf kbps\n", t_stats.tot_throughput);
 				if(isRetSegAcceptable(st_h)){
-					printf("Segment acceptable!\n");
+					printf(KGRN "Segment acceptable!\n" KNRM);
 					printf("Quality changed from q = %i", seg_chosen_q[st_h->seg_ind - 1]);
 					seg_chosen_q[st_h->seg_ind - 1] = (int) st_h->seg_q;
 					printf(" to q = %i\n", seg_chosen_q[st_h->seg_ind - 1]);
 				} else { // Segment not acceptable
 					w_stats.re_unused_count++;
 					w_stats.re_unused_data += st_h->sh_nread / 1000;
-					printf("Segment NOT acceptable!\n");
+					printf(KRED "Segment NOT acceptable!\n" KNRM);
 				}
 			} else { // Stream terminated
 				w_stats.re_unused_count++;
@@ -1671,12 +1687,12 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 		// Re-initialize urgency for retransmission and priority purposes
 		client_ctx->urgency = highest_urgency;
 		// Print useful throughput information
-		printf("Total throughput: %.3Lf kbps\n", t_stats.tot_throughput);
+		// printf("Total throughput: %.3Lf kbps\n", t_stats.tot_throughput);
 		if (rep_seg_ind < seg_ind) { // If there is still playout of reproduction
 			if (buffer_level >= min_init_bs && playout){
 				unsigned next_quality = 0;
 				if (client_ctx->chosen_abr < 4) {
-					printf("ABR starting... \n"); 
+					// printf("ABR starting... \n"); 
 					
 					unsigned start_seg_ind = rep_seg_ind;
 					// if (rep_seg_time <= available_time_off)
@@ -1692,14 +1708,14 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					unsigned min_q[group_n];
 					for (size_t i = 0; i < group_n; i++){
 						min_q[i] = seg_chosen_q[i + start_seg_ind];
-						if (i < group_n - 1)
-							printf("min_q[%zu]: %d \n", i, min_q[i]);
+						// if (i < group_n - 1)
+						//	printf("min_q[%zu]: %d \n", i, min_q[i]);
 					}
 					if (seg_ind > N_MAX_SEG)
 						min_q[group_n - 1] = seg_chosen_q[start_seg_ind + group_n - 1];
 					else
 						min_q[group_n - 1] = 0;
-					printf("min_q[%u]: %d \n", group_n - 1, min_q[group_n - 1]);
+					// printf("min_q[%u]: %d \n", group_n - 1, min_q[group_n - 1]);
 					
 					unsigned n_par;
 					if (client_ctx->chosen_abr != 0) {
@@ -1730,7 +1746,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 									available_times[i] = rep_seg_time - buffer_threshold + (i + start_seg_ind - rep_seg_ind) * seg_length;
 								else
 									available_times[i] = (rep_seg_time + (i + start_seg_ind - rep_seg_ind) * seg_length) * 0.9;
-							printf("available_times[%zu]: %.3f \n", i, available_times[i]);
+							// printf("available_times[%zu]: %.3f \n", i, available_times[i]);
 						}
 					}
 					
@@ -1965,28 +1981,28 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 									// goto error_check;
 								// }
 								/* pValue reference stolen here: */
-								printf("Calling Python function!\n");
+								// printf("Calling Python function!\n");
 								pValue = PyObject_CallObject(myFunction, args);
-								printf("End Python function!\n");
+								// printf("End Python function!\n");
 								Py_DECREF(args);
 								if (pValue != NULL) {
 									// printf("PyList_Check: %d\n", PyList_Check(pValue));
 									if (PyList_Check(pValue)) {
-										printf("PyList_Size: %d\n", PyList_Size(pValue));
+										// printf("PyList_Size: %d\n", PyList_Size(pValue));
 										// printf("Result of call: %.1f\n", PyFloat_AsDouble(PyList_GetItem(pValue, 0)));
 										// sol[n_par-1] = PyFloat_AsDouble(PyList_GetItem(pValue, 0));
 										// Skip 2nd element which is L[0]
 										for (int i = 0; i < n_par; i++) {
-											printf("Result of call: %.1f\n", PyFloat_AsDouble(PyList_GetItem(pValue, i)));
+											// printf("Result of call: %.1f\n", PyFloat_AsDouble(PyList_GetItem(pValue, i)));
 											sol[i] = PyFloat_AsDouble(PyList_GetItem(pValue, i));
-											printf("Sol[%d]: %.1f\n", i, sol[i]);
+											// printf("Sol[%d]: %.1f\n", i, sol[i]);
 										}
 										if (PyList_Size(pValue) > n_par) { // If there are segments to be retransmitted
 											rq_size = PyList_Size(pValue) - n_par;
 											retransmission_queue = malloc(rq_size * sizeof(unsigned));
 											for (int i = n_par; i < PyList_Size(pValue); i++) {
 												retransmission_queue[i-n_par] = (unsigned) PyFloat_AsDouble(PyList_GetItem(pValue, i)) - 1; // - 1 because Python algorithm considers also in-play segment
-												printf("Retransmission_queue index %d: %d\n", i-n_par, retransmission_queue[i-n_par]);
+												// printf("Retransmission_queue index %d: %d\n", i-n_par, retransmission_queue[i-n_par]);
 											}
 										}
 									}
@@ -2037,7 +2053,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						return;
 					}
 					
-					printf("Optimization model running time: %.3Lf\n", (long double) (lsquic_time_now() - init_opt_model) / 1000000);
+					// printf("Optimization model running time: %.3Lf\n", (long double) (lsquic_time_now() - init_opt_model) / 1000000);
 					
 					if (error == -1){
 						printf("ERROR: OPTIMIZATION ALGORITHM RETURNED -1!\n");
@@ -2076,8 +2092,8 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						for (size_t i = 0; i < group_n; i++)
 							printf("Segment %lu: Old Quality -> %i; New Quality -> %i; Throughput -> %.0f\n", i + start_seg_ind + 1, min_q[i], chosen_q[i], chosen_T[i]);
 						// Print J* [and Q*]
-						if (client_ctx->chosen_abr != 1)
-							printf("J* -> %.0f\n", sol[n_par - 1]);
+						// if (client_ctx->chosen_abr != 1)
+							// printf("J* -> %.0f\n", sol[n_par - 1]);
 					}
 					
 					if (seg_ind <= N_MAX_SEG) { // NEW SEGMENTS TO DOWNLOAD
@@ -2091,7 +2107,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						pe->path = seg_paths[next_quality]; /* Path of the next requested segment */
 						pe->seg_ind = seg_ind;
 						pe->seg_q = next_quality;
-						printf("Downloading seg. %d, rep. %d, path: '%s'\n", seg_ind, next_quality, pe->path);
+						// printf("Downloading seg. %d, rep. %d, path: '%s'\n", seg_ind, next_quality, pe->path);
 						TAILQ_INSERT_TAIL(&client_ctx->hcc_path_elems, pe, next_pe);
 						conn_h->ch_n_reqs = MIN(client_ctx->hcc_total_n_reqs,
 																client_ctx->hcc_reqs_per_conn);
@@ -2115,7 +2131,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					
 					// Segments re-transmission for the buffered segments
 					if (client_ctx->chosen_abr == 0 && retransmission_queue) {
-						printf("In the retransmission selection...\n");
+						// printf("In the retransmission selection...\n");
 						for (unsigned i = 0; i < rq_size; ++i) {
 							if (chosen_q[retransmission_queue[i]] != min_q[retransmission_queue[i]]) { // If the chosen quality is higher than the buffered one (&& at least equal to the subsequent one)
 								//Retransmit
@@ -2130,7 +2146,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 								pe->path = temp_pp; /* Path of the next requested segment */
 								pe->seg_ind = retransmission_queue[i] + start_seg_ind + 1;
 								pe->seg_q = chosen_q[retransmission_queue[i]];
-								printf("Added to the queue: segment index %u, representation %u, segment path '%s'\n", retransmission_queue[i] + start_seg_ind + 1, chosen_q[retransmission_queue[i]], pe->path);
+								// printf("Added to the queue: segment index %u, representation %u, segment path '%s'\n", retransmission_queue[i] + start_seg_ind + 1, chosen_q[retransmission_queue[i]], pe->path);
 								TAILQ_INSERT_TAIL(&client_ctx->hcc_ret_path_elems, pe, next_pe);
 								conn_h->ch_n_reqs += MIN(client_ctx->hcc_total_n_reqs,
 																client_ctx->hcc_reqs_per_conn);
@@ -2154,7 +2170,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 								pe->path = temp_pp; /* Path of the next requested segment */
 								pe->seg_ind = i + start_seg_ind + 1;
 								pe->seg_q = chosen_q[i];
-								printf("Added to the queue: segment index %u, representation %u, segment path '%s'\n", i + start_seg_ind + 1, chosen_q[i], pe->path);
+								// printf("Added to the queue: segment index %u, representation %u, segment path '%s'\n", i + start_seg_ind + 1, chosen_q[i], pe->path);
 								TAILQ_INSERT_TAIL(&client_ctx->hcc_ret_path_elems, pe, next_pe);
 								conn_h->ch_n_reqs += MIN(client_ctx->hcc_total_n_reqs,
 																client_ctx->hcc_reqs_per_conn);
@@ -2185,7 +2201,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					pe->path = seg_paths[next_quality]; /* Path of the next requested segment */
 					pe->seg_ind = seg_ind;
 					pe->seg_q = next_quality;
-					printf("Downloading seg. %d, rep. %d, path: '%s'\n", seg_ind, next_quality, pe->path);
+					// printf("Downloading seg. %d, rep. %d, path: '%s'\n", seg_ind, next_quality, pe->path);
 					TAILQ_INSERT_TAIL(&client_ctx->hcc_path_elems, pe, next_pe);
 					conn_h->ch_n_reqs = MIN(client_ctx->hcc_total_n_reqs,
 															client_ctx->hcc_reqs_per_conn);
@@ -2240,7 +2256,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					pe->path = seg_paths[next_quality]; /* Path of the next requested segment */
 					pe->seg_ind = seg_ind;
 					pe->seg_q = next_quality;
-					printf("Downloading seg. %d, rep. %d, path: '%s'\n", seg_ind, next_quality, pe->path);
+					// printf("Downloading seg. %d, rep. %d, path: '%s'\n", seg_ind, next_quality, pe->path);
 					TAILQ_INSERT_TAIL(&client_ctx->hcc_path_elems, pe, next_pe);
 					conn_h->ch_n_reqs = MIN(client_ctx->hcc_total_n_reqs,
 															client_ctx->hcc_reqs_per_conn);
@@ -2252,13 +2268,13 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					s_stats.delta = 0.0;
 
 					// Minh - ADD - S
-					printf("MInh: H = %.2f\t Buffer level = %.2f\n", s_stats.H, buffer_level);
+					// printf("MInh: H = %.2f\t Buffer level = %.2f\n", s_stats.H, buffer_level);
 					// Minh - ADD - E
 
 					if (buffer_level > s_stats.I){
 						if (s_stats.W[seg_chosen_q[qualities_ind]][seg_ind] / s_stats.H > buffer_level - s_stats.I) {
 
-							printf("MInh: W/H = %.2Lf\n", s_stats.W[seg_chosen_q[qualities_ind]][seg_ind] / s_stats.H);
+							//printf("MInh: W/H = %.2Lf\n", s_stats.W[seg_chosen_q[qualities_ind]][seg_ind] / s_stats.H);
 							
 							for (int i = seg_chosen_q[qualities_ind]; i >= 0; i--) {
 								if (s_stats.W[i][seg_ind] / s_stats.H <= buffer_level - s_stats.I) {
@@ -2267,7 +2283,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 								}
 							}
 						} else if (buffer_level <= s_stats.B_alpha) { // Additive increase
-							printf("Additive Increase!\n");
+							// printf("Additive Increase!\n");
 							// Minh - MOD - S
 							unsigned qualities_ind_increased = seg_chosen_q[qualities_ind] + 1;
 							
@@ -2277,7 +2293,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 							else
 								l = seg_chosen_q[qualities_ind];
 						} else if (buffer_level <= s_stats.B_beta) { // Aggressive switching
-							printf("Aggressive Switching!\n");
+							// printf("Aggressive Switching!\n");
 							l = seg_chosen_q[qualities_ind];
 							for (int i = N_REP - 1; i >= (int) seg_chosen_q[qualities_ind]; i--) {
 								if (s_stats.W[i][seg_ind] / s_stats.H <= buffer_level - s_stats.I) {
@@ -2287,7 +2303,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 								}
 							}
 						} else if (buffer_level > s_stats.B_beta) { // Delayed Download
-							printf("Delayed Download!\n");
+							// printf("Delayed Download!\n");
 							// Minh - MOD - S
 							l = seg_chosen_q[qualities_ind];
 							// Minh - MOD - E
@@ -2308,9 +2324,9 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					if (l >= N_REP)
 						l = N_REP - 1;
 					
-					printf("l is %u\n", l);
+					// printf("l is %u\n", l);
 					
-					printf("Sleep for %d s\n", (unsigned int) s_stats.delta);
+					// printf("Sleep for %d s\n", (unsigned int) s_stats.delta);
 					sleep((unsigned int) s_stats.delta); // Sleep for x seconds until the buffer level allow new segments download
 					
 					++client_ctx->hcc_still_segments;
@@ -2320,7 +2336,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					pe->path = seg_paths[next_quality]; /* Path of the next requested segment */
 					pe->seg_ind = seg_ind;
 					pe->seg_q = next_quality;
-					printf("Downloading seg. %d, rep. %d, path: '%s'\n", seg_ind, next_quality, pe->path);
+					// printf("Downloading seg. %d, rep. %d, path: '%s'\n", seg_ind, next_quality, pe->path);
 					TAILQ_INSERT_TAIL(&client_ctx->hcc_path_elems, pe, next_pe);
 					conn_h->ch_n_reqs = MIN(client_ctx->hcc_total_n_reqs,
 															client_ctx->hcc_reqs_per_conn);
@@ -2376,8 +2392,8 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
                       m_selectedQualityIndex = seg_chosen_q[qualities_ind];
                     }
 
-                    printf("===================== BBA-0 ==================");
-                    printf(" Selected bitrate: %u\n", m_selectedQualityIndex);
+                    //printf("===================== BBA-0 ==================");
+                    //printf(" Selected bitrate: %u\n", m_selectedQualityIndex);
                     
                     // printf("Sleep for %d s\n", (unsigned int) s_stats.delta);
                     // sleep((unsigned int) s_stats.delta); // Sleep for x seconds until the buffer level allow new segments download
@@ -2389,7 +2405,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
                     pe->path = seg_paths[next_quality]; /* Path of the next requested segment */
                     pe->seg_ind = seg_ind;
                     pe->seg_q = next_quality;
-                    printf("Downloading seg. %d, rep. %d, path: '%s'\n", seg_ind, next_quality, pe->path);
+                    // printf("Downloading seg. %d, rep. %d, path: '%s'\n", seg_ind, next_quality, pe->path);
                     TAILQ_INSERT_TAIL(&client_ctx->hcc_path_elems, pe, next_pe);
                     conn_h->ch_n_reqs = MIN(client_ctx->hcc_total_n_reqs,
                                                             client_ctx->hcc_reqs_per_conn);
@@ -2404,7 +2420,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					// seg_bitrates[next_quality] is the chosen bitrate for next segment
 					//if (buffer_level >= min_init_bs) has already been checked
 					if (h_stats.T_e > seg_bitrates[next_quality]) {
-						printf("===================== H2BR STRATEGY ==================");
+						// printf("===================== H2BR STRATEGY ==================");
 						double buffer_estim = 0.0;
 						int start_group = -1;
 						int end_group = -1;
@@ -2414,12 +2430,14 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						unsigned ret_segments = 0U;
 						unsigned group_quality = 0U;
 						unsigned quality_levels[seg_ind - rep_seg_ind - 1];
-						printf("\nQuality level: [ ");
+						// printf("\nQuality level: [ ");
+						/*
 						for (unsigned i = 0; i < seg_ind - rep_seg_ind - 1; i++) {
 							quality_levels[i] = seg_chosen_q[rep_seg_ind + i];
 							printf("%i ", quality_levels[i]);
 						}
 						printf("]\n");
+						*/
 						// Check beginning quality value
 						first_quality = seg_chosen_q[rep_seg_ind - 1];
 						if (quality_levels[0] < seg_chosen_q[rep_seg_ind - 1]) {
@@ -2434,7 +2452,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						find_groups:
 						// Check groups and conditions
 						for (unsigned i = start_search; i < seg_ind - rep_seg_ind - 2; i++) {
-							printf("\n q[i]: %u - q[i+1]: %u", quality_levels[i], quality_levels[i+1]);
+							// printf("\n q[i]: %u - q[i+1]: %u", quality_levels[i], quality_levels[i+1]);
 							if (start_group != -1 && end_group != -1)
 								break;
 							if (quality_levels[i] > quality_levels[i + 1]) {
@@ -2477,7 +2495,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 							if (second_quality <= quality_levels[start_group]) {
 								second_quality = quality_levels[start_group] + 1;
 							}
-							printf("\nStart group: %i, End group: %i, retransmit: %d, first quality: %u, second quality: %u!\n", start_group, end_group, retransmit, first_quality, second_quality);
+							// printf("\nStart group: %i, End group: %i, retransmit: %d, first quality: %u, second quality: %u!\n", start_group, end_group, retransmit, first_quality, second_quality);
 							//printf("\nTEST SEG. FALT 1\n");
 							unsigned n_segments = end_group - start_group + 1;
 							// Try first with minimum of adjacent quality values
@@ -2510,10 +2528,12 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 										if (ret_segments <= i + 1) { // If actual ret_segments is lower or equal than the new number of segments to be pushed at quality k, go for it
 											ret_segments = i + 1;
 											group_quality = k;
-											printf("Conditions satisfied for %u ret_segments -> buffer_estim: %.3f, split_throughput: %.3Lf", ret_segments, buffer_estim, split_throughput);
+											//printf("Conditions satisfied for %u ret_segments -> buffer_estim: %.3f, split_throughput: %.3Lf", ret_segments, buffer_estim, split_throughput);
+											/*
 											for (unsigned j = 0; j < i + 1; j++)
 												printf(", T_r[%u]: %.3Lf", j, T_r[j]);
 											printf("\n");
+											*/
 										}
 									}
 								}
@@ -2545,7 +2565,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 								pe->path = temp_pp; /* Path of the next requested segment */
 								pe->seg_ind = rep_seg_ind + start_group + s + 1;
 								pe->seg_q = group_quality;
-								printf("Added to the queue: segment index %u, representation %u, segment path '%s'\n", rep_seg_ind + start_group + s + 1, group_quality, pe->path);
+								// printf("Added to the queue: segment index %u, representation %u, segment path '%s'\n", rep_seg_ind + start_group + s + 1, group_quality, pe->path);
 								TAILQ_INSERT_TAIL(&client_ctx->hcc_ret_path_elems, pe, next_pe);
 								conn_h->ch_n_reqs += MIN(client_ctx->hcc_total_n_reqs,
 																client_ctx->hcc_reqs_per_conn);
@@ -2561,7 +2581,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 				pe->path = seg_paths[0]; /* Path of the next requested segment */
 				pe->seg_ind = seg_ind;
 				pe->seg_q = 0;
-				printf("Lowest representation, segment path: '%s'\n", pe->path);
+				// printf("Lowest representation, segment path: '%s'\n", pe->path);
 				TAILQ_INSERT_TAIL(&client_ctx->hcc_path_elems, pe, next_pe);
 				conn_h->ch_n_reqs = MIN(client_ctx->hcc_total_n_reqs,
 														client_ctx->hcc_reqs_per_conn);
@@ -2592,18 +2612,18 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
             MIN((conn_h->ch_n_reqs - conn_h->ch_n_cc_streams),
                 (client_ctx->hcc_cc_reqs_per_conn - conn_h->ch_n_cc_streams)));
 		/* CHECK ON TRANSMISSION AND RE-TRANSMISSION QUEUES */
-		printf("SRS: %u, SS: %u\n", client_ctx->hcc_still_ret_segments, client_ctx->hcc_still_segments);
+		// printf("SRS: %u, SS: %u\n", client_ctx->hcc_still_ret_segments, client_ctx->hcc_still_segments);
 		if (client_ctx->hcc_cc_reqs_per_conn > 1) {
 			if (!client_ctx->hcc_open_streams) {
-				printf("\n==> Transmission Time <==\n");
+				// printf("\n==> Transmission Time <==\n");
 				create_streams(client_ctx, conn_h); // Open the transmission stream
 			}
 		} else {
 			if (client_ctx->hcc_still_segments) {			// Check if next stream is re-transmission and - if so - whether it is possible or not
-				printf("\nTransmission is possible.\n");
+				// printf("\nTransmission is possible.\n");
 				create_streams(client_ctx, conn_h); // Open the transmission stream
 			} else if (client_ctx->hcc_still_ret_segments) {
-				printf("\nRe-transmission path update.\n");
+				// printf("\nRe-transmission path update.\n");
 				struct path_elem *temp_pe;
 				temp_pe = calloc(1, sizeof(*temp_pe));
 				if (client_ctx->hcc_ret_pe)
@@ -2611,7 +2631,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 				else
 					temp_pe = TAILQ_FIRST(&client_ctx->hcc_ret_path_elems);
 				if (!temp_pe) { // If it's the last element of the queue
-					printf("\nGoing through ABR again\n");
+					// printf("\nGoing through ABR again\n");
 					goto abr; // Re-execute ABR strategy
 				}
 				client_ctx->hcc_ret_pe = temp_pe;
@@ -2624,7 +2644,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						client_ctx->hcc_ret_pe = temp_pe;
 						available_time = rep_seg_time + (client_ctx->hcc_ret_pe->seg_ind - rep_seg_ind) * seg_length;
 					} else {
-						printf("\nGoing through ABR again\n");
+						// printf("\nGoing through ABR again\n");
 						goto abr;
 					}
 				}
@@ -3641,7 +3661,7 @@ main (int argc, char **argv)
 	
 	s = prog_run(&prog);
 	
-	printf("Exiting run - Computing metrics...\n");
+	// printf("Exiting run - Computing metrics...\n");
 
 	if (stats_fh)
 	{
