@@ -328,6 +328,114 @@ void Finalize ()
     Py_Finalize();
 }
 
+/* Random bits generation function */
+static void print_bits(int length){
+	for (int i = 0; i < length; i++) {
+		printf("%i", rand() % 2);  // Returns a pseudo-random integer between 0 and 1.
+	}
+}
+
+/* Random hexadecimal values generation function */
+static void print_hexa(int length){
+	for (int i = 0; i < length; i++) {
+		printf("%X", rand() % 16);  // Returns a pseudo-random integer between 0 and 1.
+	}
+}
+
+static void print_dataframe(int bytes, int mode){ // bytes: data length in bytes, mode: 0 -> bits, 1 -> hexadecimal
+	int print_length = 0;
+	if (mode == 1) // hexadecimal
+		print_length = bytes / 2;
+	else // bits
+		print_length = bytes * 8;
+	/* Initialize table titles */
+	const char title1[] = "Data length";
+	int string_mode_length = mode == 1 ? strlen("hexadecimal") : strlen("binary");
+	char string_mode[string_mode_length + 1];
+	snprintf(string_mode, string_mode_length + 1, "%s", mode == 1 ? "hexadecimal" : "binary");
+	char title2[20 + strlen(string_mode) + 1]; // 20 + end of word + hexadecimal OR binary
+	snprintf(title2, sizeof(title2), "Stream data(%s values)", string_mode);
+	char string_length[5 + 1];
+	snprintf(string_length, sizeof(string_length), "0x%X", print_length);
+	// Compute the width of the two columns
+	int width_column1 = strlen(title1) + 4;
+	int width_column2 = MAX(strlen(title2), print_length) + 4;
+	/* Print table */
+	// First row
+	printf("\t+");
+	for (int i = 0; i < width_column1; i++) // 4 spaces (2 per side)
+		printf("-");
+	printf("+");
+	for (int i = 0; i < width_column2; i++) // 4 spaces (2 per side)
+		printf("-");
+	printf("+\n");
+	// Second row
+	printf("\t|");
+	for (int i = 0; i < (width_column1 - strlen(title1))/2; i++)
+		printf(" ");
+	printf("%s", title1);
+	for (int i = 0; i < (width_column1 - strlen(title1))/2; i++)
+		printf(" ");
+	if ((strlen(title1) % 2 == 0 && width_column1 % 2 == 1) || (strlen(title1) % 2 == 1 && width_column1 % 2 == 0))
+		printf(" ");
+	printf("|");
+	for (int i = 0; i < (width_column2 - strlen(title2))/2; i++)
+		printf(" ");
+	printf("%s", title2);
+	for (int i = 0; i < (width_column2 - strlen(title2))/2; i++)
+		printf(" ");
+	if ((strlen(title2) % 2 == 0 && width_column2 % 2 == 1) || (strlen(title2) % 2 == 1 && width_column2 % 2 == 0))
+		printf(" ");
+	printf("|\n");
+	// Third row
+	printf("\t+");
+	for (int i = 0; i < width_column1; i++) // 4 spaces (2 per side)
+		printf("-");
+	printf("+");
+	for (int i = 0; i < width_column2; i++) // 4 spaces (2 per side)
+		printf("-");
+	printf("+\n");
+	// Fourth row
+	printf("\t|");
+	for (int i = 0; i < (width_column1 - strlen(string_length))/2; i++)
+		printf(" ");
+	printf("%s", string_length);
+	for (int i = 0; i < (width_column1 - strlen(string_length))/2; i++)
+		printf(" ");
+	if ((strlen(string_length) % 2 == 0 && width_column1 % 2 == 1) || (strlen(string_length) % 2 == 1 && width_column1 % 2 == 0))
+		printf(" ");
+	printf("|");
+	for (int i = 0; i < (width_column2 - print_length)/2; i++)
+		printf(" ");
+	if (mode == 1)
+		print_hexa(print_length); // 256 total values (for 512 bytes buffer)
+	else
+		print_bits(print_length);
+	for (int i = 0; i < (width_column2 - print_length)/2; i++)
+		printf(" ");
+	if ((strlen(print_length) % 2 == 0 && width_column2 % 2 == 1) || (strlen(print_length) % 2 == 1 && width_column2 % 2 == 0))
+		printf(" ");
+	printf("|\n");	
+	// Fifth row
+	printf("\t+");
+	for (int i = 0; i < width_column1; i++) // 4 spaces (2 per side)
+		printf("-");
+	printf("+");
+	for (int i = 0; i < width_column2; i++) // 4 spaces (2 per side)
+		printf("-");
+	printf("+\n");
+	
+	/*
+	printf("\t+---------------+-----------------------------------------------------------+\n");
+	printf("\t|  Data length  |               Stream data (hexadecimal values)            |\n");
+	printf("\t+---------------+-----------------------------------------------------------+\n");
+	printf("\t|     0x%X     | ", data_length);
+	print_hexa(data_length); // 256 total values (for 512 bytes buffer)
+	printf(" |\n");
+	printf("\t+---------------+-----------------------------------------------------------+\n");
+	*/
+}
+
 /* Update the buffer size when required */
 static void update_buff(bool sr){
 	if(playout){ /* If player is not paused */
@@ -1386,6 +1494,9 @@ http_client_on_read (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
         {
             st_h->sh_nread += (size_t) nread;
             s_stat_downloaded_bytes += nread;
+			printf("\n");
+			printf("Packet received! It will be displayed here...\n");
+			print_dataframe(128,1); // Print data tables
 			// printf("\nPacket received. Data will be displayed...\n");
 			// fwrite(buf, 1, nread, st_h->download_fh ? st_h->download_fh : stdout);
 			// printf("\n");
@@ -3357,6 +3468,9 @@ main (int argc, char **argv)
 	b_m_stats.max_value = 0;
 	w_stats.re_data = 0.0;
 	w_stats.re_count = 0U;
+	
+	/* Random numbers generation -> Initialize */
+	srand((unsigned) time(NULL));   // Initialization, should only be called once.
 	
 	// Initialization of segments qualities
 	for (unsigned i = 0; i < sizeof(seg_chosen_q) / sizeof(seg_chosen_q[0]); ++i){
