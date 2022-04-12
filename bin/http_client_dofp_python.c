@@ -342,15 +342,15 @@ static void print_hexa(int length){
 	}
 }
 
-static void print_dataframe(int bytes, int mode){ // bytes: data length in bytes, mode: 0 -> bits, 1 -> hexadecimal
-	int print_length = 0;
+static void print_dataframe(unsigned int bytes, unsigned int mode){ // bytes: data length in bytes, mode: 0 -> bits, 1 -> hexadecimal
+	unsigned int print_length = 0;
 	if (mode == 1) // hexadecimal
 		print_length = bytes / 2;
 	else // bits
 		print_length = bytes * 8;
 	/* Initialize table titles */
 	const char title1[] = "Data length";
-	int string_mode_length = mode == 1 ? strlen("hexadecimal") : strlen("binary");
+	unsigned int string_mode_length = mode == 1 ? strlen("hexadecimal") : strlen("binary");
 	char string_mode[string_mode_length + 1];
 	snprintf(string_mode, string_mode_length + 1, "%s", mode == 1 ? "hexadecimal" : "binary");
 	char title2[20 + strlen(string_mode) + 1]; // 20 + end of word + hexadecimal OR binary
@@ -358,70 +358,70 @@ static void print_dataframe(int bytes, int mode){ // bytes: data length in bytes
 	char string_length[5 + 1];
 	snprintf(string_length, sizeof(string_length), "0x%X", print_length);
 	// Compute the width of the two columns
-	int width_column1 = strlen(title1) + 4;
-	int width_column2 = MAX(strlen(title2), print_length) + 4;
+	unsigned int width_column1 = strlen(title1) + 4;
+	unsigned int width_column2 = MAX(strlen(title2), print_length) + 4;
 	/* Print table */
 	// First row
 	printf("\t+");
-	for (int i = 0; i < width_column1; i++) // 4 spaces (2 per side)
+	for (unsigned int i = 0; i < width_column1; i++) // 4 spaces (2 per side)
 		printf("-");
 	printf("+");
-	for (int i = 0; i < width_column2; i++) // 4 spaces (2 per side)
+	for (unsigned int i = 0; i < width_column2; i++) // 4 spaces (2 per side)
 		printf("-");
 	printf("+\n");
 	// Second row
 	printf("\t|");
-	for (int i = 0; i < (width_column1 - strlen(title1))/2; i++)
+	for (unsigned int i = 0; i < (width_column1 - strlen(title1))/2; i++)
 		printf(" ");
 	printf("%s", title1);
-	for (int i = 0; i < (width_column1 - strlen(title1))/2; i++)
+	for (unsigned int i = 0; i < (width_column1 - strlen(title1))/2; i++)
 		printf(" ");
 	if ((strlen(title1) % 2 == 0 && width_column1 % 2 == 1) || (strlen(title1) % 2 == 1 && width_column1 % 2 == 0))
 		printf(" ");
 	printf("|");
-	for (int i = 0; i < (width_column2 - strlen(title2))/2; i++)
+	for (unsigned int i = 0; i < (width_column2 - strlen(title2))/2; i++)
 		printf(" ");
 	printf("%s", title2);
-	for (int i = 0; i < (width_column2 - strlen(title2))/2; i++)
+	for (unsigned int i = 0; i < (width_column2 - strlen(title2))/2; i++)
 		printf(" ");
 	if ((strlen(title2) % 2 == 0 && width_column2 % 2 == 1) || (strlen(title2) % 2 == 1 && width_column2 % 2 == 0))
 		printf(" ");
 	printf("|\n");
 	// Third row
 	printf("\t+");
-	for (int i = 0; i < width_column1; i++) // 4 spaces (2 per side)
+	for (unsigned int i = 0; i < width_column1; i++) // 4 spaces (2 per side)
 		printf("-");
 	printf("+");
-	for (int i = 0; i < width_column2; i++) // 4 spaces (2 per side)
+	for (unsigned int i = 0; i < width_column2; i++) // 4 spaces (2 per side)
 		printf("-");
 	printf("+\n");
 	// Fourth row
 	printf("\t|");
-	for (int i = 0; i < (width_column1 - strlen(string_length))/2; i++)
+	for (unsigned int i = 0; i < (width_column1 - strlen(string_length))/2; i++)
 		printf(" ");
 	printf("%s", string_length);
-	for (int i = 0; i < (width_column1 - strlen(string_length))/2; i++)
+	for (unsigned int i = 0; i < (width_column1 - strlen(string_length))/2; i++)
 		printf(" ");
 	if ((strlen(string_length) % 2 == 0 && width_column1 % 2 == 1) || (strlen(string_length) % 2 == 1 && width_column1 % 2 == 0))
 		printf(" ");
 	printf("|");
-	for (int i = 0; i < (width_column2 - print_length)/2; i++)
+	for (unsigned int i = 0; i < (width_column2 - print_length)/2; i++)
 		printf(" ");
 	if (mode == 1)
 		print_hexa(print_length); // 256 total values (for 512 bytes buffer)
 	else
 		print_bits(print_length);
-	for (int i = 0; i < (width_column2 - print_length)/2; i++)
+	for (unsigned int i = 0; i < (width_column2 - print_length)/2; i++)
 		printf(" ");
-	if ((strlen(print_length) % 2 == 0 && width_column2 % 2 == 1) || (strlen(print_length) % 2 == 1 && width_column2 % 2 == 0))
+	if ((print_length % 2 == 0 && width_column2 % 2 == 1) || (print_length % 2 == 1 && width_column2 % 2 == 0))
 		printf(" ");
 	printf("|\n");	
 	// Fifth row
 	printf("\t+");
-	for (int i = 0; i < width_column1; i++) // 4 spaces (2 per side)
+	for (unsigned int i = 0; i < width_column1; i++) // 4 spaces (2 per side)
 		printf("-");
 	printf("+");
-	for (int i = 0; i < width_column2; i++) // 4 spaces (2 per side)
+	for (unsigned int i = 0; i < width_column2; i++) // 4 spaces (2 per side)
 		printf("-");
 	printf("+\n");
 	
@@ -1155,10 +1155,12 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
 			if (!st_h->client_ctx->hcc_ret_pe)
 				st_h->client_ctx->hcc_ret_pe = TAILQ_FIRST(&st_h->client_ctx->hcc_ret_path_elems);
 			/* Path has been set. Check whether the throughput is enough to re-download the segment in time before the playout of its low-quality version */
+			/*
 			double available_time = 0.0;
 			if (st_h->client_ctx->hcc_ret_pe->seg_ind > rep_seg_ind)
 				available_time = rep_seg_time + (st_h->client_ctx->hcc_ret_pe->seg_ind - rep_seg_ind - 1) * seg_length; // .. (st_h->client_ctx->hcc_ret_pe->seg_ind (+1) - rep_seg_ind (-1)) * ..
 			// printf("Available time: %.3f\n", available_time);
+			*/
 			// printf("Bitrate: %d\n", seg_bitrates[st_h->client_ctx->hcc_ret_pe->seg_q]);
 			// printf("Estimated throughput: %.3Lf\n", t_stats.e_temp_throughput);
 			// printf("Re-transmission time: %.3Lf\n", seg_bitrates[st_h->client_ctx->hcc_ret_pe->seg_q] * seg_length / t_stats.e_temp_throughput);
@@ -1496,7 +1498,7 @@ http_client_on_read (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
             s_stat_downloaded_bytes += nread;
 			printf("\n");
 			printf("Packet received! It will be displayed here...\n");
-			print_dataframe(128,1); // Print data tables
+			print_dataframe(256,1); // Print data tables
 			// printf("\nPacket received. Data will be displayed...\n");
 			// fwrite(buf, 1, nread, st_h->download_fh ? st_h->download_fh : stdout);
 			// printf("\n");
@@ -1677,7 +1679,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 		// lsquic_conn_ctx_t *const conn_h = lsquic_conn_get_ctx(conn);
 		// --conn_h->ch_n_reqs;
 		// --conn_h->ch_n_cc_streams;
-		double download_time = (double) (lsquic_time_now() - st_h->sh_created) / 1000000;
+		// double download_time = (double) (lsquic_time_now() - st_h->sh_created) / 1000000;
 		// printf("Stream init: %.3f; Stream close: %.3f; Download time: %.3f.\n", (double) st_h->sh_created / 1000000, (double) lsquic_time_now() / 1000000, download_time);
 		if (!st_h->isRet){
 			if (!st_h->isTerminated) {
@@ -1801,7 +1803,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 		// printf("Total throughput: %.3Lf kbps\n", t_stats.tot_throughput);
 		if (rep_seg_ind < seg_ind) { // If there is still playout of reproduction
 			if (buffer_level >= min_init_bs && playout){
-				unsigned next_quality = 0;
+				int next_quality = 0;
 				if (client_ctx->chosen_abr < 4) {
 					// printf("ABR starting... \n"); 
 					
@@ -1867,7 +1869,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 					
 					int error;
 					
-					lsquic_time_t init_opt_model = lsquic_time_now();
+					//lsquic_time_t init_opt_model = lsquic_time_now();
 					
 					if (client_ctx->hcc_cc_reqs_per_conn > 1)
 						isMultiStream = true;
@@ -1893,8 +1895,8 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						PySys_SetArgv(cmd_argc, _argv);
 						
 						/* Add local path */
-						PyObject *sys = PyImport_ImportModule("sys");
-						PyObject *path = PyObject_GetAttrString(sys, "path");
+						// PyObject *sys = PyImport_ImportModule("sys");
+						// PyObject *path = PyObject_GetAttrString(sys, "path");
 						
 						/* Run the 'main' module */
 						// int rtn = Py_Main(cmd_argc, _argv); // <-- Notice the command line arguments.
@@ -1970,7 +1972,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 										error = true;
 										goto error_check;
 									}
-								for (int i = 0; i < sizeof(min_q)/sizeof(min_q[0]); i++) {
+								for (unsigned int i = 0; i < sizeof(min_q)/sizeof(min_q[0]); i++) {
 									loop_value = PyLong_FromLong((unsigned long) min_q[i]);
 									PyTuple_SetItem(pValue, i+1, loop_value);
 									if (!loop_value) {
@@ -2103,7 +2105,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 										// printf("Result of call: %.1f\n", PyFloat_AsDouble(PyList_GetItem(pValue, 0)));
 										// sol[n_par-1] = PyFloat_AsDouble(PyList_GetItem(pValue, 0));
 										// Skip 2nd element which is L[0]
-										for (int i = 0; i < n_par; i++) {
+										for (unsigned int i = 0; i < n_par; i++) {
 											// printf("Result of call: %.1f\n", PyFloat_AsDouble(PyList_GetItem(pValue, i)));
 											sol[i] = PyFloat_AsDouble(PyList_GetItem(pValue, i));
 											// printf("Sol[%d]: %.1f\n", i, sol[i]);
@@ -2551,7 +2553,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						*/
 						// Check beginning quality value
 						first_quality = seg_chosen_q[rep_seg_ind - 1];
-						if (quality_levels[0] < seg_chosen_q[rep_seg_ind - 1]) {
+						if ((int) quality_levels[0] - seg_chosen_q[rep_seg_ind - 1] < 0) {
 							start_group = 0;
 						}
 						// } else if (quality_levels[0] == seg_chosen_q[rep_seg_ind - 1] && seg_chosen_q[rep_seg_ind - 1] + 1 < N_REP) {
@@ -2590,7 +2592,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 						if (start_group == -1) {
 							retransmit = false;
 						} else if (end_group == -1) {
-							if (quality_levels[seg_ind - rep_seg_ind - 2] < next_quality) {
+							if ((int) quality_levels[seg_ind - rep_seg_ind - 2] - next_quality < 0) {
 								end_group = seg_ind - rep_seg_ind - 2;
 								second_quality = next_quality;
 							} else
@@ -2651,7 +2653,7 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
 							}
 							
 							// Check next group if ret_segments is 0 and other groups are available
-							if (ret_segments == 0 && end_group < seg_ind - rep_seg_ind - 2) {
+							if (ret_segments == 0 && end_group - (int) seg_ind + (int) rep_seg_ind + 2 < 0) {
 								first_quality = quality_levels[end_group];
 								start_search = end_group + 1;
 								start_group = -1;
