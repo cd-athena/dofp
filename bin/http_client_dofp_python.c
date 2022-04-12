@@ -64,15 +64,43 @@
 #include "../src/liblsquic/lsquic_conn.h"
 #include "lsxpack_header.h"
 
-/* COLOR PRINT SETTINGS */
+/* 
+ *  COLOR PRINT SETTINGS
+ *	Settings map:
+ *		#define RESET		0
+ *		#define BRIGHT 		1
+ *		#define DIM			2
+ *		#define UNDERLINE 	3
+ *		#define BLINK		4
+ *		#define REVERSE		7
+ *		#define HIDDEN		8
+ *
+ *		#define BLACK 		0
+ *		#define RED			1
+ *		#define GREEN		2
+ *		#define YELLOW		3
+ *		#define BLUE		4
+ *		#define MAGENTA		5
+ *		#define CYAN		6
+ *		#define	WHITE		7
+ *
+ *  Standard way to set a color command:
+ *  
+ *  char command[13];
+ *
+ *  // Command is the control command to the terminal
+ *  sprintf(command, "%c[%d;%d;%dm", 0x1B, attr, fg + 30, bg + 40);
+ *	printf("%s", command);
+ */
+
 #define KNRM  "\x1B[0m"
-#define KRED  "\x1B[31m"
-#define KGRN  "\x1B[32m"
-#define KYEL  "\x1B[33m"
-#define KBLU  "\x1B[34m"
-#define KMAG  "\x1B[35m"
-#define KCYN  "\x1B[36m"
-#define KWHT  "\x1B[37m"
+#define KRED  "\x1B[1;31m"
+#define KGRN  "\x1B[1;32m"
+#define KYEL  "\x1B[1;33m"
+#define KBLU  "\x1B[1;34m"
+#define KMAG  "\x1B[1;35m"
+#define KCYN  "\x1B[1;36m"
+#define KWHT  "\x1B[1;37m"
 
 /* TOS - 5 minutes */
 #define N_REP 7 /* Number of available media representations (quality levels) */
@@ -362,7 +390,7 @@ static void print_dataframe(unsigned int bytes, unsigned int mode){ // bytes: da
 	unsigned int width_column2 = MAX(strlen(title2), print_length) + 4;
 	/* Print table */
 	// First row
-	printf("\t+");
+	printf(KGRN "\t+");
 	for (unsigned int i = 0; i < width_column1; i++) // 4 spaces (2 per side)
 		printf("-");
 	printf("+");
@@ -423,7 +451,7 @@ static void print_dataframe(unsigned int bytes, unsigned int mode){ // bytes: da
 	printf("+");
 	for (unsigned int i = 0; i < width_column2; i++) // 4 spaces (2 per side)
 		printf("-");
-	printf("+\n");
+	printf("+\n" KNRM);
 	
 	/*
 	printf("\t+---------------+-----------------------------------------------------------+\n");
@@ -1497,7 +1525,7 @@ http_client_on_read (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
             st_h->sh_nread += (size_t) nread;
             s_stat_downloaded_bytes += nread;
 			printf("\n");
-			printf("Packet received! It will be displayed here...\n");
+			printf(KMAG "Packet received! It will be displayed here...\n" KNRM);
 			print_dataframe(256,1); // Print data tables
 			// printf("\nPacket received. Data will be displayed...\n");
 			// fwrite(buf, 1, nread, st_h->download_fh ? st_h->download_fh : stdout);
