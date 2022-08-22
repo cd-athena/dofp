@@ -211,7 +211,7 @@ static char             JSON_FILENAME[] = "itu-p1203_abr_00.json";
 static char             JSON_OUT_FILENAME[] = "itu-p1203_abr_00_out.json";
 static const float      FPS = 24.0;
 static const char       DEVICE[] = "pc";
-static const char       DISPLAYSIZE[] = "1920x1080";
+static const char       DISPLAYSIZE[] = "3840x2160";
 static const unsigned   VIEWINGDISTANCE = 150U;
 static bool             isMultiStream = false; // Set to true automatically if multiplexing feature is enabled (-w parameter > 1)
 static bool             request_cancellation = true; // True if request cancellation, or stream termination or stream cancellation, is enabled
@@ -240,7 +240,7 @@ static const char       WEIGHTS_FILENAME[] = "apple/weights.txt";
 */
 
 /* TOS */
-/*
+
 static char             *seg_paths[N_REP] = {"tos1_h264/107/segment_1.m4s", 
 											  "tos1_h264/240/segment_1.m4s", 
 											  "tos1_h264/346/segment_1.m4s", 
@@ -254,10 +254,9 @@ static const char       FP_PATH[] = "tos1_h264/";
 static const char       SP_PATH[] = "/segment_";
 static const char       EXT[] = ".m4s";
 static const char       WEIGHTS_FILENAME[] = "tos1_h264/weights.txt";
-*/
 
 /* GAMEPLAY */
-
+/*
 static char             *seg_paths[N_REP] = {"gameplay_5min_4s/107/segment_1.m4s", 
 											  "gameplay_5min_4s/240/segment_1.m4s", 
 											  "gameplay_5min_4s/346/segment_1.m4s", 
@@ -271,7 +270,7 @@ static const char       FP_PATH[] = "gameplay_5min_4s/";
 static const char       SP_PATH[] = "/segment_";
 static const char       EXT[] = ".m4s";
 static const char       WEIGHTS_FILENAME[] = "gameplay_5min_4s/weights.txt";
-
+*/
 
 /* RALLY */
 /*

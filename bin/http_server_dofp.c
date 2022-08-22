@@ -1226,7 +1226,8 @@ static struct req_map req_maps[] =
     { .method = GET, .path = "/", .handler = IOH_INDEX_HTML, .status = "200", .flags = 0, },
     { .method = GET, .path = "/index.html", .handler = IOH_INDEX_HTML, .status = "200", .flags = 0, },
 	{ .method = GET, .path = "media[0-9]+.txt", .handler = IOH_MEDIA, .status = "200", .flags = RM_REGEX, }, // MEDIA TRANSFER REQUEST
-	{ .method = GET, .path = ".*\.m4s", .handler = IOH_MEDIA, .status = "200", .flags = RM_REGEX, }, // MEDIA TRANSFER REQUEST
+	{ .method = GET, .path = ".*.m4s", .handler = IOH_MEDIA, .status = "200", .flags = RM_REGEX, }, // MEDIA TRANSFER REQUEST
+	{ .method = GET, .path = ".*.mp4", .handler = IOH_MEDIA, .status = "200", .flags = RM_REGEX, }, // MEDIA TRANSFER REQUEST
     { .method = POST, .path = "/cgi-bin/md5sum.cgi", .handler = IOH_MD5SUM, .status = "200", .flags = RM_WANTBODY, },
     { .method = POST, .path = "/cgi-bin/verify-headers.cgi", .handler = IOH_VER_HEAD, .status = "200", .flags = RM_WANTBODY, },
     { .method = GET, .path = "^/([0-9][0-9]*)([KMG]?)$", .handler = IOH_GEN_FILE, .status = "200", .flags = RM_REGEX, },

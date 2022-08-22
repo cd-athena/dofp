@@ -1,0 +1,7 @@
+# Ignore the video segments
+tos1_h264
+gameplay_5min_4s
+rally_5min_4s
+tos_5min_end_4s
+# Ignore the 3G trace
+bin/3G_trace.sh
