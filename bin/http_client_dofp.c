@@ -63,7 +63,7 @@
 #include "../src/liblsquic/lsquic_conn.h"
 #include "lsxpack_header.h"
 
-#define N_REP 6 /* Number of available media representations (quality levels) Apple: 11, Ghent: 6 */
+#define N_REP 11 /* Number of available media representations (quality levels) Apple: 11, Ghent: 6 */
 #define K_MAX 10 /* Quality  values for average quality computation */
 #define N_MAX_SEG 184 /* Max number of segments to be downloaded */
 #define AVG_COUNT 5 /* Moving average count */
@@ -193,35 +193,35 @@ static double           stalls_t[N_MAX_SEG] = {0.0}; /* Stalls media time */
 static double           stalls_d[N_MAX_SEG] = {0.0}; /* Stalls duration */
 static unsigned         stall_ind = 0U; // First stall is the initial buffering
 static lsquic_time_t    stall_t; /* Start stall time */
-static const char       FP_PATH[] = "ghent/"; // "ghent", "apple"
+static const char       FP_PATH[] = "apple/"; // "ghent", "apple"
 static const char       SP_PATH[] = "/segment_";
 static const char       EXT[] = ".m4s";
 static unsigned         seg_ind = 1U;
 
 /* APPle*/
-// static char             *seg_paths[N_REP] = {"apple/apple_360p_145k/segment_apple_360p_145k_1.m4s", 
-//                                              "apple/apple_432p_300k/segment_apple_432p_300k_1.m4s", 
-//                                              "apple/apple_540p_600k/segment_apple_540p_600k_1.m4s", 
-//                                              "apple/apple_540p_900k/segment_apple_540p_900k_1.m4s", 
-//                                              "apple/apple_540p_1600k/segment_apple_540p_1600k_1.m4s", 
-//                                              "apple/apple_720p_2400k/segment_apple_720p_2400k_1.m4s", 
-//                                              "apple/apple_720p_3400k/segment_apple_720p_3400k_1.m4s", 
-//                                              "apple/apple_1080p_4500k/segment_apple_1080p_4500k_1.m4s", 
-//                                              "apple/apple_1080p_5800k/segment_apple_1080p_5800k_1.m4s", 
-//                                              "apple/apple_1440p_8100k/segment_apple_1440p_8100k_1.m4s", 
-//                                              "apple/apple_2160p_11600k/segment_apple_2160p_11600k_1.m4s"}; /* To be actually parsed from an MPD file but done without loss of generality (Not considering the initialization segment) */
-// static const int        seg_bitrates[N_REP] = {145, 300, 600, 900, 1600, 2400, 3400, 4500, 5800, 8100, 11600}; /* [kbps] To be actually parsed from an MPD file but done without loss of generality */
-// static char             *seg_res[N_REP] = {"640x360", "768x432", "960x540", "960x540", "960x540", "1280x720", "1280x720", "1920x1080", "1920x1080", "2560x1440", "3840x2160"};
+static char             *seg_paths[N_REP] = {"apple/145/segment_1.m4s", 
+                                             "apple/300/segment_1.m4s", 
+                                             "apple/600/segment_1.m4s", 
+                                             "apple/900/segment_1.m4s", 
+                                             "apple/1600/segment_1.m4s", 
+                                             "apple/2400/segment_1.m4s", 
+                                             "apple/3400/segment_1.m4s", 
+                                             "apple/4500/segment_1.m4s", 
+                                             "apple/5800/segment_1.m4s", 
+                                             "apple/8100/segment_1.m4s", 
+                                             "apple/11600/segment_1.m4s"}; /* To be actually parsed from an MPD file but done without loss of generality (Not considering the initialization segment) */
+static const int        seg_bitrates[N_REP] = {145, 300, 600, 900, 1600, 2400, 3400, 4500, 5800, 8100, 11600}; /* [kbps] To be actually parsed from an MPD file but done without loss of generality */
+static char             *seg_res[N_REP] = {"640x360", "768x432", "960x540", "960x540", "960x540", "1280x720", "1280x720", "1920x1080", "1920x1080", "2560x1440", "3840x2160"};
 
 /* Ghent */
-static char             *seg_paths[N_REP] = {"ghent/150/segment_1.m4s", 
-                                             "ghent/150/segment_1.m4s",
-                                             "ghent/150/segment_1.m4s",
-                                             "ghent/150/segment_1.m4s",
-                                             "ghent/150/segment_1.m4s",
-                                             "ghent/150/segment_1.m4s"}; /* To be actually parsed from an MPD file but done without loss of generality (Not considering the initialization segment) */
-static const int        seg_bitrates[N_REP] = {150, 500, 1150, 2600, 5450, 10700}; /* [kbps] To be actually parsed from an MPD file but done without loss of generality */
-static char             *seg_res[N_REP] = {"640x360", "854x480", "1280x720", "1920x1080", "2560x1440", "3840x2160"};
+// static char             *seg_paths[N_REP] = {"ghent/150/segment_1.m4s", 
+//                                              "ghent/150/segment_1.m4s",
+//                                              "ghent/150/segment_1.m4s",
+//                                              "ghent/150/segment_1.m4s",
+//                                              "ghent/150/segment_1.m4s",
+//                                              "ghent/150/segment_1.m4s"}; /* To be actually parsed from an MPD file but done without loss of generality (Not considering the initialization segment) */
+// static const int        seg_bitrates[N_REP] = {150, 500, 1150, 2600, 5450, 10700}; /* [kbps] To be actually parsed from an MPD file but done without loss of generality */
+// static char             *seg_res[N_REP] = {"640x360", "854x480", "1280x720", "1920x1080", "2560x1440", "3840x2160"};
 
 
 static int              seg_chosen_q[N_MAX_SEG]; /* Chosen representation quality for each downloaded segment. If -1, the segment has not been yet downloaded */
@@ -230,11 +230,11 @@ static int              qualities_ind = -1; /* Index for values substitution */
 static const double     alpha = .5, beta = .5;
 static unsigned         rep_seg_ind = 1U;
 static double           rep_seg_time = 4.0; /* Left time for the segment to be fully reproduced (4s -> ... -> 0s) */
-static const char       WEIGHTS_FILENAME[] = "bin/weights_ghent_tos.txt";
-static char             METRICS_FILENAME[] = "DoFP_extensions/ghent_tos/metrics_abr_00.csv";
-static char             METRICS_OUT_FILENAME[] = "DoFP_extensions/ghent_tos/metrics_abr_00_out.csv";
-static char             JSON_FILENAME[] = "DoFP_extensions/ghent_tos/itu-p1203_abr_00.json";
-static char             JSON_OUT_FILENAME[] = "DoFP_extensions/ghent_tos/itu-p1203_abr_00_out.txt";
+static const char       WEIGHTS_FILENAME[] = "bin/weights_apple_tos.txt";
+static char             METRICS_FILENAME[] = "DoFP_extensions/apple_tos/metrics_abr_00.csv";
+static char             METRICS_OUT_FILENAME[] = "DoFP_extensions/apple_tos/metrics_abr_00_out.csv";
+static char             JSON_FILENAME[] = "DoFP_extensions/apple_tos/itu-p1203_abr_00.json";
+static char             JSON_OUT_FILENAME[] = "DoFP_extensions/apple_tos/itu-p1203_abr_00_out.txt";
 static const float      FPS = 24.0;
 static const char       DEVICE[] = "pc";
 static const char       DISPLAYSIZE[] = "3840x2160";
@@ -370,6 +370,8 @@ Return type - unsigned : segment index on success, 0 on failure
 static unsigned
 getSegIndFromPath(const char* source)
 {
+	// Minh - MOD - S
+	#if 0
     int length, i, j;
     int target_length = 3;
     unsigned seg_ind;
@@ -398,7 +400,27 @@ getSegIndFromPath(const char* source)
             target[d - j] = target[d]; // shift the ciphers by j
         
     seg_ind = (unsigned) atoi(target);
-    
+    #else
+    // example of source: ghent/5450/segment_100.m4s
+    unsigned seg_ind = 0;
+
+	char str[strlen(source) + 1]; // do not forget +1 for the null character!
+	strcpy(str, source);    
+
+    char *pChr = strtok (str, "_.");
+    int i = 0;
+    while (pChr != NULL) {
+        if (i == 1) {	// the seg_id is in the 2nd element
+        	// printf("----------- seg_id found: %s\n", pChr);
+        	seg_ind = (unsigned) atoi(pChr);
+        }
+        pChr = strtok (NULL, "_.");
+        i++;
+    }
+
+    #endif
+    // Minh - MOD - E
+    // printf("============> Minh --- seg_ind: %u\n", seg_ind);
     return seg_ind;
 }
 
@@ -1015,6 +1037,7 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
     
         if (st_h->client_ctx->payload)
         {
+        	printf("Process-path-1:\n");
             st_h->reader.lsqr_read = test_reader_read;
             st_h->reader.lsqr_size = test_reader_size;
             st_h->reader.lsqr_ctx = create_lsquic_reader_ctx(st_h->client_ctx->payload);
@@ -1025,6 +1048,7 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
             st_h->reader.lsqr_ctx = NULL;
         LSQ_INFO("created new stream, path: %s", st_h->path);
         lsquic_stream_wantwrite(stream, 1);
+        printf("Process-path-2:\n");
         if (randomly_reprioritize_streams)
         {
             if ((1 << lsquic_conn_quic_version(lsquic_stream_conn(stream)))
@@ -1046,6 +1070,7 @@ http_client_on_new_stream (void *stream_if_ctx, lsquic_stream_t *stream)
             st_h->sh_flags |= ABANDON;
         }
 
+        printf("Process-path-3:\n");
         if (st_h->client_ctx->hcc_download_dir)
         {
             char path[PATH_MAX];
@@ -1255,6 +1280,8 @@ http_client_on_read (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
     
     if (bitrate == 0 || seg_ind == 0) {
         printf("==== UNABLE TO GATHER BITRATE OR SEG IND FROM PATH -> CLOSING STREAM ====\n");
+        printf("========== bitrate: %d\n", bitrate);
+        printf("========== seg_ind: %u\n", seg_ind);
         lsquic_stream_close(stream);
         return;
     } // else
@@ -1446,24 +1473,33 @@ http_client_on_close (lsquic_stream_t *stream, lsquic_stream_ctx_t *st_h)
     
     if (client_ctx->hcc_still_ret_segments || client_ctx->hcc_still_segments) {
     
-        printf("Read bytes: %.0ld, time_now(): %.0ld, st_h->sh_created: %.0ld, download time: %.0ld\n", st_h->sh_nread, lsquic_time_now(), st_h->sh_created, (lsquic_time_now() - st_h->sh_created) / 1000000);
+        printf("Read bytes: %.0ld, time_now(): %.0ld, st_h->sh_created: %.0ld, download time: %.0lds\n", st_h->sh_nread, lsquic_time_now(), st_h->sh_created, (lsquic_time_now() - st_h->sh_created) / 1000000);
         
         long double new_throughput = (long double) st_h->sh_nread * 8 / ((long double) 1000 * (lsquic_time_now() - st_h->sh_created) / 1000000); // [kbps]
         /* Smoothed throughput computation */
+
         if (t_stats.s_throughput == 0)
             t_stats.s_throughput = new_throughput;
         else
             t_stats.s_throughput = .875 * t_stats.s_throughput + .125 * new_throughput; // (1-1/8) and 1/8 as described in the WISH paper
         /* Throughput computation */
+		
+		// Minh - Fix 0kbps throughput - S - reason: sh_nread = 0.
+		#if 0          
         t_stats.throughput = new_throughput;
+        #else
+        t_stats.throughput = (new_throughput == 0) ? t_stats.s_throughput : new_throughput;
+        #endif
+        // Minh - Fix 0kbps throughput - E
+
         // Estimated Throughput is the MIN(Smoothed and Normal)
-        printf("Throughput: %.3Lf kbps\n", t_stats.throughput);
-        printf("Smoothed throughput: %.3Lf kbps\n", t_stats.s_throughput);
+        printf("==> Throughput: %.3Lf kbps\n", t_stats.throughput);
+        printf("==> Smoothed throughput: %Lf kbps\n", t_stats.s_throughput);
         //t_stats.e_temp_throughput = MIN(t_stats.throughput, t_stats.s_throughput);
         t_stats.e_temp_throughput = 0.9 * t_stats.throughput;
         t_stats.tot_throughput += t_stats.e_temp_throughput; // Useful for computing the total throughput in multistreams scenarios
-        printf("Estimated throughput: %.3Lf kbps\n", t_stats.e_temp_throughput);
-        printf("Total throughput: %.3Lf kbps\n", t_stats.tot_throughput);
+        printf("==> Estimated throughput: %Lf kbps\n", t_stats.e_temp_throughput);
+        printf("==> Total throughput: %Lf kbps\n", t_stats.tot_throughput);
         LSQ_INFO("%s called", __func__);
         // struct http_client_ctx *const client_ctx = st_h->client_ctx;
         // lsquic_conn_t *const conn = lsquic_stream_conn(stream);
@@ -3008,8 +3044,10 @@ main (int argc, char **argv)
             client_ctx.chosen_abr = atoi(optarg);
             break;
         case 'Z':
-                if (atoi(optarg) == 1)
-                client_ctx.h2br = true;
+                if (atoi(optarg) == 1){
+                	client_ctx.h2br = true;
+                	printf("===== H2BR is enable ====\n");
+                }
             break;
         case '4':
         case '6':
@@ -3118,7 +3156,7 @@ main (int argc, char **argv)
         // Minh - add
         case 'D':
             experiment_id = atoi(optarg);
-            printf("**** experiment_id: %d", experiment_id);
+            printf("**** experiment_id: %d\n", experiment_id);
             break;
         case '0':
             http_client_if.on_sess_resume_info = http_client_on_sess_resume_info;
@@ -3184,16 +3222,16 @@ main (int argc, char **argv)
 
     printf("====> 2\n");
     // Set file path for metrics
-    snprintf(METRICS_FILENAME, sizeof(METRICS_FILENAME)*2, "%s%i%i%s", "DoFP_extensions/ghent_tos/metrics_abr_", client_ctx.chosen_abr, experiment_id, ".csv");
+    snprintf(METRICS_FILENAME, sizeof(METRICS_FILENAME)*2, "%s%i%i%s", "DoFP_extensions/apple_tos/metrics_abr_", client_ctx.chosen_abr, experiment_id, ".csv");
     
     // Set file path for output metrics
-    snprintf(METRICS_OUT_FILENAME, sizeof(METRICS_OUT_FILENAME)*2, "%s%i%i%s", "DoFP_extensions/ghent_tos/metrics_abr_", client_ctx.chosen_abr, experiment_id, "_out.csv");
+    snprintf(METRICS_OUT_FILENAME, sizeof(METRICS_OUT_FILENAME)*2, "%s%i%i%s", "DoFP_extensions/apple_tos/metrics_abr_", client_ctx.chosen_abr, experiment_id, "_out.csv");
     
     // Set file path for json metrics
-    snprintf(JSON_FILENAME, sizeof(JSON_FILENAME)*2, "%s%i%i%s", "DoFP_extensions/ghent_tos/itu-p1203_abr_", client_ctx.chosen_abr, experiment_id, ".json");
+    snprintf(JSON_FILENAME, sizeof(JSON_FILENAME)*2, "%s%i%i%s", "DoFP_extensions/apple_tos/itu-p1203_abr_", client_ctx.chosen_abr, experiment_id, ".json");
     
     // Set file path for json qoe metrics
-    snprintf(JSON_OUT_FILENAME, sizeof(JSON_OUT_FILENAME)*2, "%s%i%i%s", "DoFP_extensions/ghent_tos/itu-p1203_abr_", client_ctx.chosen_abr, experiment_id, "_out.txt");
+    snprintf(JSON_OUT_FILENAME, sizeof(JSON_OUT_FILENAME)*2, "%s%i%i%s", "DoFP_extensions/apple_tos/itu-p1203_abr_", client_ctx.chosen_abr, experiment_id, "_out.txt");
     
     if (client_ctx.chosen_abr == 6) // SARA
         min_init_bs = s_stats.I;
@@ -3280,12 +3318,24 @@ main (int argc, char **argv)
     if (!fp)
         printf("Error opening JSON file %s!\n", METRICS_FILENAME);
     fprintf(fp, "THROUGHPUT,BITRATE,BUFFER,QUALITY,STALLT,STALLD");
+    // Minh - Add metrics when H2BR is enable - MOD - S
+    #if 0
     if (client_ctx.chosen_abr < 4)
+    #else
+    if (client_ctx.chosen_abr < 4 || client_ctx.h2br)
+    #endif
+    // Minh - Add metrics when H2BR is enable - MOD - E
         fprintf(fp, ",REDATA,RECOUNT,REUNUSED,REUNUSEDCOUNT");
     fprintf(fp, "\n");
     for (size_t i = 0; i < N_MAX_SEG; i++) {
         fprintf(fp, "%.2Lf,%i,%.3f,%i,%.3f,%.3f", t_stats.e_throughput[i], seg_bitrates[seg_chosen_q[i]], t_stats.b_level[i], seg_chosen_q[i], stalls_t[i], stalls_d[i]);
+        // Minh - Add metrics when H2BR is enable - MOD - S
+        #if 0
         if (i == 0 && client_ctx.chosen_abr < 4)
+        #else
+        if (i == 0 && (client_ctx.chosen_abr < 4 || client_ctx.h2br))
+        #endif
+        // Minh - Add metrics when H2BR is enable - MOD - E
             fprintf(fp, ",%.3Lf,%u,%.3Lf,%u", w_stats.re_data, w_stats.re_count, w_stats.re_unused_data, w_stats.re_unused_count);
         fprintf(fp, "\n");
     }
@@ -3297,19 +3347,19 @@ main (int argc, char **argv)
         printf("Error opening JSON file %s!\n", JSON_FILENAME);
     fprintf(jfp, "{\n\t\"I11\":{\n\t\t\"segments\":[],\n\t\t\"streamId\":42},\n\t\"I13\":{\n\t\t\"segments\":[");
     unsigned int start = 0U;
-    fprintf(jfp, "\n\t\t{\n\t\t\t\"bitrate\":%i,\n\t\t\t\"codec\":\"h264\",\n\t\t\t\"duration\":%u,\n\t\t\t\"fps\":%.1f,\n\t\t\t\"resolution\":\"%s\",\n\t\t\t\"start\":%u}", 
+    fprintf(jfp, "\n\t\t{\n\t\t\t\"bitrate\":%i,\n\t\t\t\"codec\":\"hevc\",\n\t\t\t\"duration\":%u,\n\t\t\t\"fps\":%.1f,\n\t\t\t\"resolution\":\"%s\",\n\t\t\t\"start\":%u\n\t\t\t}", 
             seg_bitrates[seg_chosen_q[0]], seg_length, FPS, seg_res[seg_chosen_q[0]], start);
     start += seg_length;
     for (size_t i = 1; i < N_MAX_SEG; i++) {
-        fprintf(jfp, ",\n\t\t{\n\t\t\t\"bitrate\": %i,\n\"codec\":\"h264\",\n\"duration\":%u,\n\"fps\":%.1f,\n\"resolution\":\"%s\",\n\"start\":%u}", 
+        fprintf(jfp, ",\n\t\t{\n\t\t\t\"bitrate\": %i,\n\t\t\t\"codec\":\"hevc\",\n\t\t\t\"duration\":%u,\n\t\t\t\"fps\":%.1f,\n\t\t\t\"resolution\":\"%s\",\n\t\t\t\"start\":%u\n\t\t\t}", 
             seg_bitrates[seg_chosen_q[i]], seg_length, FPS, seg_res[seg_chosen_q[i]], start);
     start += seg_length;
     }
-    fprintf(jfp, "],\n\"streamId\":42},\n\t\"I23\":{\n\t\"stalling\":[");
+    fprintf(jfp, "],\n\t\t\"streamId\":42\n},\n\t\"I23\":{\n\t\"stalling\":[");
     fprintf(jfp, "[%.3f,%.3f]", stalls_t[0], stalls_d[0]);
     for (size_t j = 1; j < stall_ind; j++)
         fprintf(jfp, ",[%.3f,%.3f]", stalls_t[j], stalls_d[j]);
-    fprintf(jfp, "],\n\t\"streamId\": 42},\n\t\"IGen\":{\n\t\t\"device\":\"%s\",\n\t\t\"displaySize\":\"%s\",\n\t\t\"viewingDistance\":\"%u%s\"}}\n", DEVICE, DISPLAYSIZE, VIEWINGDISTANCE, "cm");
+    fprintf(jfp, "],\n\t\t\"streamId\": 42},\n\t\"IGen\":{\n\t\t\"device\":\"%s\",\n\t\t\"displaySize\":\"%s\",\n\t\t\"viewingDistance\":\"%u%s\"}}\n", DEVICE, DISPLAYSIZE, VIEWINGDISTANCE, "cm");
     fclose(jfp);
     
     /* CREATE OUTPUT JSON FILE */
