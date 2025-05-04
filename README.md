@@ -1,34 +1,17 @@
-[![Linux and MacOS build status](https://ci.appveyor.com/api/projects/status/x790ve5msewmva2b/branch/master?svg=true)](https://ci.appveyor.com/project/litespeedtech/lsquic-linux/branch/master)
-[![Windows build status](https://ci.appveyor.com/api/projects/status/ij4n3vy343pkgm1j/branch/master?svg=true)](https://ci.appveyor.com/project/litespeedtech/lsquic-windows/branch/master)
-[![FreeBSD build status](https://api.cirrus-ci.com/github/litespeedtech/lsquic.svg)](https://cirrus-ci.com/github/litespeedtech/lsquic)
-[![Documentation Status](https://readthedocs.org/projects/lsquic/badge/?version=latest)](https://lsquic.readthedocs.io/en/latest/?badge=latest)
-
-LiteSpeed QUIC (LSQUIC) Library README
+DoFP+ ABR Algorithm README
 =============================================
 
 Description
 -----------
 
-LiteSpeed QUIC (LSQUIC) Library is an open-source implementation of QUIC
-and HTTP/3 functionality for servers and clients.  Most of the code in this
-distribution is used in our own products: LiteSpeed Web Server, LiteSpeed ADC,
-and OpenLiteSpeed.
+This is a fork of [LSQUIC](https://github.com/litespeedtech/lsquic) where we implemented DoFP+ ABR algorithm in QUIC
+and HTTP/3.
 
-Currently supported QUIC versions are v1, Internet-Draft versions 29, and 27;
-and the older "Google" QUIC versions Q043, Q046, an Q050.
-
-Documentation
--------------
-
-Documentation is available at https://lsquic.readthedocs.io/en/latest/.
-
-In addition, see example programs for API usage and EXAMPLES.txt for
-some compilation and run-time options.
 
 Requirements
 ------------
 
-To build LSQUIC, you need CMake, zlib, and BoringSSL.  The example program
+To build LSQUIC, you need CMake, zlib, Gurobi and BoringSSL.  The example program
 uses libevent to provide the event loop.
 
 Building BoringSSL
@@ -86,8 +69,9 @@ as follows:
 1. Get the source code
 
 ```
-git clone https://github.com/litespeedtech/lsquic.git
+git clone https://github.com/cd-athena/dofp.git
 cd lsquic
+git checkout my_updates
 git submodule init
 git submodule update
 ```
@@ -111,59 +95,9 @@ make
 ```
 
 
-3. Run tests
+3. Run experiments
 
 ```
-make test
+./bin/http_client_dofp_python -H www.optimized-abr.com -s 192.168.153.139:123456 -p tos1_h264/107/segment_1.m4s -M GET -K -r 250 -w 1 -J 0
 ```
 
-Building with Docker
----------
-The library and the example client and server can be built with Docker.
-
-Initialize Git submodules:
-```
-cd lsquic
-git submodule init
-git submodule update
-```
-
-Build the Docker image:
-```
-docker build -t lsquic .
-```
-
-Then you can use the examples from the command line.  For example:
-```
-sudo docker run -it --rm lsquic http_client -s www.google.com  -p / -o version=h3-29
-sudo docker run -p 12345:12345/udp -v /path/to/certs:/mnt/certs -it --rm lsquic http_server -c www.example.com,/mnt/certs/chain,/mnt/certs/key
-```
-
-Platforms
----------
-
-The library has been tested on the following platforms:
-- Linux
-  - i386
-  - x86_64
-  - ARM (Raspberry Pi 3)
-- FreeBSD
-  - i386
-- MacOS
-  - x86_64
-- Android
-  - ARM
-- Windows
-  - x86_64
-
-Get Involved
-------------
-
-Do not hesitate to report bugs back to us.  Even better, send us fixes
-and improvements!
-
-Have fun,
-
-LiteSpeed QUIC Team.
-
-Copyright (c) 2017 - 2021 LiteSpeed Technologies Inc
